@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 const menuItems = [
   {
@@ -37,16 +37,10 @@ const menuItems = [
   },
 ];
 
-const craftSteps = [
-  ["I", "Toast", "Whole spices warmed until their oils wake up."],
-  ["II", "Layer", "Rice, masala, herbs and saffron built with precision."],
-  ["III", "Seal", "The handi is closed so every note stays inside."],
-  ["IV", "Dum", "Time and low flame finish what technique began."],
-];
-
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [inquiryPrepared, setInquiryPrepared] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setLoaded(true), 350);
@@ -83,6 +77,32 @@ export default function Home() {
 
   const closeMenu = () => setMenuOpen(false);
 
+  const prepareCateringInquiry = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const value = (name: string) => String(form.get(name) ?? "").trim();
+    const subject = `Deccan Flame catering enquiry — ${value("eventType") || "Event"}`;
+    const body = [
+      "Hello Deccan Flame,",
+      "",
+      "I’d like to discuss catering for an upcoming event.",
+      "",
+      `Name: ${value("name")}`,
+      `Email: ${value("email")}`,
+      `Phone: ${value("phone") || "Not provided"}`,
+      `Event type: ${value("eventType")}`,
+      `Event date: ${value("eventDate")}`,
+      `Guest count: ${value("guestCount")}`,
+      `Event location: ${value("location") || "Not provided"}`,
+      `Dietary needs / notes: ${value("notes") || "None provided"}`,
+      "",
+      "Thank you.",
+    ].join("\n");
+
+    setInquiryPrepared(true);
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
   return (
     <main className={loaded ? "site is-loaded" : "site"}>
       <a className="skip-link" href="#main-content">
@@ -111,7 +131,7 @@ export default function Home() {
         <nav className="desktop-nav" aria-label="Primary navigation">
           <a href="#story">Story</a>
           <a href="#menu">Signature menu</a>
-          <a href="#craft">Our craft</a>
+          <a href="#catering">Catering</a>
         </nav>
 
         <a className="nav-cta" href="#experience">
@@ -139,8 +159,8 @@ export default function Home() {
           <a onClick={closeMenu} href="#menu">
             <span>02</span> Signature menu
           </a>
-          <a onClick={closeMenu} href="#craft">
-            <span>03</span> Our craft
+          <a onClick={closeMenu} href="#catering">
+            <span>03</span> Catering
           </a>
           <a onClick={closeMenu} href="#experience">
             <span>04</span> Experience
@@ -296,22 +316,101 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="craft section-shell" id="craft">
-        <div className="craft-heading">
+      <section className="catering section-shell" id="catering">
+        <div className="catering-intro">
           <div className="section-kicker">
-            <span>04</span><p>Built by fire</p>
+            <span>04</span><p>Catering enquiries</p>
           </div>
-          <h2>Four moves.<br /><em>One unforgettable reveal.</em></h2>
+          <h2>Bring the flame<br /><em>to your table.</em></h2>
+          <p className="catering-lead">
+            From office lunches to wedding celebrations, tell us what you’re
+            planning and we’ll shape a Hyderabadi feast around your occasion.
+          </p>
+
+          <div className="catering-occasions" aria-label="Catering occasions">
+            <span>Weddings</span>
+            <span>Corporate events</span>
+            <span>Family celebrations</span>
+            <span>Community gatherings</span>
+          </div>
+
+          <div className="catering-path">
+            <div><b>01</b><span><strong>Share the occasion</strong>Tell us the date, setting and guest count.</span></div>
+            <div><b>02</b><span><strong>Shape the menu</strong>Add dietary needs and dishes you have in mind.</span></div>
+            <div><b>03</b><span><strong>Confirm together</strong>We’ll use your enquiry to plan the next conversation.</span></div>
+          </div>
         </div>
-        <div className="craft-grid">
-          {craftSteps.map(([number, title, copy]) => (
-            <article key={number}>
-              <span>{number}</span>
-              <div className="craft-icon" aria-hidden="true"><i /><b /></div>
-              <h3>{title}</h3>
-              <p>{copy}</p>
-            </article>
-          ))}
+
+        <div className="catering-form-shell">
+          <div className="form-glow" aria-hidden="true" />
+          <div className="form-heading">
+            <div>
+              <span>Start an enquiry</span>
+              <h3>Tell us about your event.</h3>
+            </div>
+            <div className="form-emblem" aria-hidden="true"><i /></div>
+          </div>
+
+          <form onSubmit={prepareCateringInquiry}>
+            <div className="field-row">
+              <label>
+                <span>Your name</span>
+                <input name="name" type="text" autoComplete="name" placeholder="Full name" required />
+              </label>
+              <label>
+                <span>Email</span>
+                <input name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
+              </label>
+            </div>
+
+            <div className="field-row">
+              <label>
+                <span>Phone</span>
+                <input name="phone" type="tel" autoComplete="tel" placeholder="Optional" />
+              </label>
+              <label>
+                <span>Event type</span>
+                <select name="eventType" defaultValue="" required>
+                  <option value="" disabled>Select occasion</option>
+                  <option>Wedding</option>
+                  <option>Corporate event</option>
+                  <option>Family celebration</option>
+                  <option>Community gathering</option>
+                  <option>Other</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="field-row">
+              <label>
+                <span>Event date</span>
+                <input name="eventDate" type="date" required />
+              </label>
+              <label>
+                <span>Guest count</span>
+                <input name="guestCount" type="number" min="1" inputMode="numeric" placeholder="How many guests?" required />
+              </label>
+            </div>
+
+            <label>
+              <span>Event location</span>
+              <input name="location" type="text" autoComplete="street-address" placeholder="Venue, city or neighbourhood" />
+            </label>
+
+            <label>
+              <span>Menu ideas, dietary needs or questions</span>
+              <textarea name="notes" rows={4} placeholder="Tell us what would make the feast feel just right…" />
+            </label>
+
+            <button className="catering-submit" type="submit">
+              <span>{inquiryPrepared ? "Email draft opened" : "Prepare catering enquiry"}</span>
+              <i aria-hidden="true">↗</i>
+            </button>
+            <p className="form-note">
+              This prepares a complete email draft in your email app. No details
+              are sent until you review and send it.
+            </p>
+          </form>
         </div>
       </section>
 
@@ -342,11 +441,11 @@ export default function Home() {
           <span>Explore</span>
           <a href="#story">Our story</a>
           <a href="#menu">Signature menu</a>
-          <a href="#craft">Our craft</a>
+          <a href="#catering">Catering</a>
         </div>
         <div className="footer-block">
           <span>Stay close</span>
-          <p>Location, hours and booking details will be added before launch.</p>
+          <p>Planning an event? Prepare your catering enquiry with the details we need to get started.</p>
         </div>
         <div className="footer-bottom">
           <span>© {new Date().getFullYear()} Deccan Flame</span>
