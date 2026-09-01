@@ -134,8 +134,8 @@ export default function Home() {
           <a href="#catering">Catering</a>
         </nav>
 
-        <a className="nav-cta" href="#experience">
-          Find your flame <span aria-hidden="true">↗</span>
+        <a className="nav-cta" href="#catering">
+          Plan catering <span aria-hidden="true">↗</span>
         </a>
 
         <button
@@ -161,9 +161,6 @@ export default function Home() {
           </a>
           <a onClick={closeMenu} href="#catering">
             <span>03</span> Catering
-          </a>
-          <a onClick={closeMenu} href="#experience">
-            <span>04</span> Experience
           </a>
           <small>Authentic · Bold · Unforgettable</small>
         </div>
@@ -411,24 +408,6 @@ export default function Home() {
               are sent until you review and send it.
             </p>
           </form>
-        </div>
-      </section>
-
-      <section className="experience" id="experience">
-        <div className="experience-image" aria-hidden="true">
-          <img src="/deccan-flame-hero.webp" alt="" loading="lazy" />
-        </div>
-        <div className="experience-overlay" />
-        <div className="experience-content">
-          <img src="/deccan-flame-logo.webp" alt="Deccan Flame" loading="lazy" />
-          <p>Authentic · Bold · Unforgettable</p>
-          <h2>Come hungry.<br /><em>Leave lit.</em></h2>
-          <p className="experience-note">
-            Opening details, location and reservations are coming next.
-          </p>
-          <a className="button button-primary" href="#top">
-            <span>Back to the flame</span><i aria-hidden="true">↑</i>
-          </a>
         </div>
       </section>
 
