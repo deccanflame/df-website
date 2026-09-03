@@ -129,8 +129,8 @@ export default function Home() {
         </a>
 
         <nav className="desktop-nav" aria-label="Primary navigation">
-          <a href="#story">Story</a>
           <a href="#menu">Signature menu</a>
+          <a href="#story">Story</a>
           <a href="#catering">Catering</a>
         </nav>
 
@@ -153,14 +153,14 @@ export default function Home() {
       <div className={`mobile-menu ${menuOpen ? "is-open" : ""}`}>
         <div className="mobile-menu-inner">
           <p>Navigate the feast</p>
-          <a onClick={closeMenu} href="#story">
-            <span>01</span> Story
-          </a>
           <a onClick={closeMenu} href="#menu">
             <span>02</span> Signature menu
           </a>
+          <a onClick={closeMenu} href="#story">
+            <span>03</span> Story
+          </a>
           <a onClick={closeMenu} href="#catering">
-            <span>03</span> Catering
+            <span>04</span> Catering
           </a>
           <small>Authentic · Bold · Unforgettable</small>
         </div>
@@ -207,7 +207,7 @@ export default function Home() {
             <span className="hero-rule" />
             <span className="hero-micro">The fire begins</span>
           </div>
-          <a href="#story" aria-label="Scroll to our story">
+          <a href="#menu" aria-label="Scroll to the signature menu">
             Scroll to taste <span>⌄</span>
           </a>
         </div>
@@ -224,45 +224,11 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="story section-shell" id="story">
-        <div className="story-copy">
-          <div className="section-kicker">
-            <span>02</span>
-            <p>The Deccan way</p>
-          </div>
-          <h2>Not just cooked.<br /><em>Composed.</em></h2>
-          <p className="story-lead">
-            Hyderabadi cuisine lives in contrasts: smoke and perfume, patience
-            and theatre, royal finesse and street-side soul. Deccan Flame brings
-            those tensions to the table in every dish.
-          </p>
-          <div className="story-notes">
-            <div><strong>Slow</strong><span>Time is an ingredient.</span></div>
-            <div><strong>Layered</strong><span>Every bite reveals another note.</span></div>
-            <div><strong>Alive</strong><span>Finished with heat and intent.</span></div>
-          </div>
-        </div>
-
-        <div className="spice-stage" aria-label="Animated sculpture representing layered spice">
-          <div className="stage-label top">A study in spice</div>
-          <div className="masala-planet">
-            <div className="planet-core"><span /></div>
-            <div className="orbit orbit-a"><i /></div>
-            <div className="orbit orbit-b"><i /></div>
-            <div className="orbit orbit-c"><i /></div>
-            <div className="spice-sphere sphere-a" />
-            <div className="spice-sphere sphere-b" />
-            <div className="spice-sphere sphere-c" />
-          </div>
-          <div className="stage-label bottom">Roasted · Ground · Bloomed</div>
-        </div>
-      </section>
-
       <section className="menu-section" id="menu">
         <div className="section-shell menu-heading">
           <div>
             <div className="section-kicker light">
-              <span>03</span><p>Signature plates</p>
+              <span>02</span><p>Signature plates</p>
             </div>
             <h2>The icons,<br /><em>set ablaze.</em></h2>
           </div>
@@ -298,6 +264,40 @@ export default function Home() {
               <div className="card-corner" aria-hidden="true">↗</div>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="story section-shell" id="story">
+        <div className="story-copy">
+          <div className="section-kicker">
+            <span>03</span>
+            <p>The Deccan way</p>
+          </div>
+          <h2>Not just cooked.<br /><em>Composed.</em></h2>
+          <p className="story-lead">
+            Hyderabadi cuisine lives in contrasts: smoke and perfume, patience
+            and theatre, royal finesse and street-side soul. Deccan Flame brings
+            those tensions to the table in every dish.
+          </p>
+          <div className="story-notes">
+            <div><strong>Slow</strong><span>Time is an ingredient.</span></div>
+            <div><strong>Layered</strong><span>Every bite reveals another note.</span></div>
+            <div><strong>Alive</strong><span>Finished with heat and intent.</span></div>
+          </div>
+        </div>
+
+        <div className="spice-stage" aria-label="Animated sculpture representing layered spice">
+          <div className="stage-label top">A study in spice</div>
+          <div className="masala-planet">
+            <div className="planet-core"><span /></div>
+            <div className="orbit orbit-a"><i /></div>
+            <div className="orbit orbit-b"><i /></div>
+            <div className="orbit orbit-c"><i /></div>
+            <div className="spice-sphere sphere-a" />
+            <div className="spice-sphere sphere-b" />
+            <div className="spice-sphere sphere-c" />
+          </div>
+          <div className="stage-label bottom">Roasted · Ground · Bloomed</div>
         </div>
       </section>
 
@@ -418,8 +418,8 @@ export default function Home() {
         </div>
         <div className="footer-block">
           <span>Explore</span>
-          <a href="#story">Our story</a>
           <a href="#menu">Signature menu</a>
+          <a href="#story">Our story</a>
           <a href="#catering">Catering</a>
         </div>
         <div className="footer-block">
