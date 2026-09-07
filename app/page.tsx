@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { VoteWidget } from "../components/VoteWidget";
+import { useAuth } from "./providers";
 
 const menuItems = [
   {
@@ -10,6 +12,8 @@ const menuItems = [
     description:
       "Fragrant basmati, deep masala and saffron sealed under dough—opened only when every layer is ready.",
     className: "biryani",
+    image: "/mutton-dum-biryani.png",
+    imageAlt: "Mutton dum biryani served in a hammered copper bowl",
   },
   {
     number: "02",
@@ -18,14 +22,18 @@ const menuItems = [
     description:
       "A slow-cooked Hyderabadi classic with a silken finish, lifted by crisp onion, herbs and citrus.",
     className: "haleem",
+    image: "/mutton-haleem.png",
+    imageAlt: "Hyderabadi mutton haleem garnished with fried onions, herbs and lemon",
   },
   {
     number: "03",
-    name: "Pathar ka Gosht",
-    eyebrow: "Fire meets stone",
+    name: "Mirchi ka Salan",
+    eyebrow: "The exotic blend of spices",
     description:
-      "Tender, spice-lacquered cuts seared hot in the old-city tradition for smoke, char and unmistakable depth.",
+      "A rich, tangy Hyderabadi blend of green chilies simmered in a creamy peanut, sesame, and coconut sauce.",
     className: "gosht",
+    image: "/mirchi-ka-salan-v3.png",
+    imageAlt: "Mirchi ka salan with green chillies in a traditional copper bowl",
   },
   {
     number: "04",
@@ -34,10 +42,13 @@ const menuItems = [
     description:
       "Caramelised bread, saffron milk and roasted nuts—warm, lush and just restrained enough.",
     className: "meetha",
+    image: "/double-ka-meetha.png",
+    imageAlt: "Double ka meetha with saffron, pistachios and cashews",
   },
 ];
 
 export default function Home() {
+  const { user, profile, loading: authLoading, openAuth, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [inquiryPrepared, setInquiryPrepared] = useState(false);
@@ -74,6 +85,24 @@ export default function Home() {
       document.body.style.overflow = "";
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    const touchDevice = window.matchMedia("(hover: none), (pointer: coarse)");
+    if (!touchDevice.matches || !("IntersectionObserver" in window)) return;
+
+    const cards = document.querySelectorAll<HTMLElement>(".menu-card");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          entry.target.classList.toggle("is-touch-active", entry.isIntersecting);
+        });
+      },
+      { threshold: 0.42, rootMargin: "-8% 0px -14%" },
+    );
+
+    cards.forEach((card) => observer.observe(card));
+    return () => observer.disconnect();
+  }, []);
 
   const closeMenu = () => setMenuOpen(false);
 
@@ -130,24 +159,29 @@ export default function Home() {
 
         <nav className="desktop-nav" aria-label="Primary navigation">
           <a href="#menu">Signature menu</a>
-          <a href="#story">Story</a>
+          <a href="#vote">Vote</a>
           <a href="#catering">Catering</a>
         </nav>
 
-        <a className="nav-cta" href="#catering">
-          Plan catering <span aria-hidden="true">↗</span>
-        </a>
-
-        <button
-          className="menu-button"
-          type="button"
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <span />
-          <span />
-        </button>
+        <div className="nav-actions">
+          <button className="account-pill" type="button" onClick={() => user ? setMenuOpen(true) : openAuth("login")} disabled={authLoading}>
+            <i aria-hidden="true">{user ? (profile?.displayName?.[0] ?? user.email?.[0] ?? "D").toUpperCase() : "•"}</i>
+            <span>{authLoading ? "Loading" : user ? profile?.displayName?.split(" ")[0] ?? "Account" : "Sign in"}</span>
+          </button>
+          <a className="nav-cta" href="#catering">
+            Plan catering <span aria-hidden="true">↗</span>
+          </a>
+          <button
+            className="menu-button"
+            type="button"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span />
+            <span />
+          </button>
+        </div>
       </header>
 
       <div className={`mobile-menu ${menuOpen ? "is-open" : ""}`}>
@@ -156,12 +190,27 @@ export default function Home() {
           <a onClick={closeMenu} href="#menu">
             <span>02</span> Signature menu
           </a>
-          <a onClick={closeMenu} href="#story">
-            <span>03</span> Story
+          <a onClick={closeMenu} href="#vote">
+            <span>03</span> Vote
           </a>
           <a onClick={closeMenu} href="#catering">
             <span>04</span> Catering
           </a>
+          {profile?.role === "admin" && (
+            <a onClick={closeMenu} href="/dashboard" className="admin-menu-link">
+              <span>ADM</span> Dashboard
+            </a>
+          )}
+          <div className="menu-account">
+            {user ? (
+              <>
+                <p>Signed in as <strong>{profile?.displayName ?? user.email}</strong></p>
+                <button type="button" onClick={() => { logout(); closeMenu(); }}>Sign out</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => { closeMenu(); openAuth("login"); }}>Sign in or register</button>
+            )}
+          </div>
           <small>Authentic · Bold · Unforgettable</small>
         </div>
       </div>
@@ -195,17 +244,17 @@ export default function Home() {
               <span>Explore the menu</span>
               <i aria-hidden="true">↓</i>
             </a>
-            <a className="text-link" href="#story">
-              Discover our story <span aria-hidden="true">↗</span>
+            <a className="text-link" href="#vote">
+              Vote for the special <span aria-hidden="true">↗</span>
             </a>
           </div>
         </div>
 
         <div className="hero-footer reveal-item">
           <div>
-            <span className="hero-micro">01 / 04</span>
-            <span className="hero-rule" />
-            <span className="hero-micro">The fire begins</span>
+            {/* <span className="hero-micro">01 / 04</span> */}
+            {/* <span className="hero-rule" /> */}
+            {/* <span className="hero-micro">The fire begins</span> */}
           </div>
           <a href="#menu" aria-label="Scroll to the signature menu">
             Scroll to taste <span>⌄</span>
@@ -242,66 +291,32 @@ export default function Home() {
           {menuItems.map((item) => (
             <article className={`menu-card ${item.className}`} key={item.name}>
               <div className="menu-card-top">
-                <span>{item.number}</span>
-                <span>Deccan signature</span>
+                {/* <span>{item.number}</span> */}
+                {/* <span>Deccan signature</span> */}
               </div>
-              <div className="dish-stage" aria-hidden="true">
+              <figure className="dish-stage">
                 <div className="dish-glow" />
-                <div className="dish-plate">
-                  <span className="food food-one" />
-                  <span className="food food-two" />
-                  <span className="food food-three" />
-                  <span className="food food-four" />
-                  <i />
+                <div className="dish-image-shell">
+                  <img src={item.image} alt={item.imageAlt} width={1254} height={1254} loading="lazy" decoding="async" />
+                  <span className="dish-image-glint" aria-hidden="true" />
+                  <span className="dish-image-vignette" aria-hidden="true" />
                 </div>
-                <div className="dish-shadow" />
-              </div>
+                {/* <figcaption><span>Flame portrait</span><i>{item.number}</i></figcaption> */}
+              </figure>
               <div className="menu-card-copy">
                 <p>{item.eyebrow}</p>
                 <h3>{item.name}</h3>
                 <span>{item.description}</span>
               </div>
-              <div className="card-corner" aria-hidden="true">↗</div>
+              {/* <div className="card-corner" aria-hidden="true">↗</div> */}
             </article>
           ))}
         </div>
       </section>
 
-      <section className="story section-shell" id="story">
-        <div className="story-copy">
-          <div className="section-kicker">
-            <span>03</span>
-            <p>The Deccan way</p>
-          </div>
-          <h2>Not just cooked.<br /><em>Composed.</em></h2>
-          <p className="story-lead">
-            Hyderabadi cuisine lives in contrasts: smoke and perfume, patience
-            and theatre, royal finesse and street-side soul. Deccan Flame brings
-            those tensions to the table in every dish.
-          </p>
-          <div className="story-notes">
-            <div><strong>Slow</strong><span>Time is an ingredient.</span></div>
-            <div><strong>Layered</strong><span>Every bite reveals another note.</span></div>
-            <div><strong>Alive</strong><span>Finished with heat and intent.</span></div>
-          </div>
-        </div>
+      <VoteWidget />
 
-        <div className="spice-stage" aria-label="Animated sculpture representing layered spice">
-          <div className="stage-label top">A study in spice</div>
-          <div className="masala-planet">
-            <div className="planet-core"><span /></div>
-            <div className="orbit orbit-a"><i /></div>
-            <div className="orbit orbit-b"><i /></div>
-            <div className="orbit orbit-c"><i /></div>
-            <div className="spice-sphere sphere-a" />
-            <div className="spice-sphere sphere-b" />
-            <div className="spice-sphere sphere-c" />
-          </div>
-          <div className="stage-label bottom">Roasted · Ground · Bloomed</div>
-        </div>
-      </section>
-
-      <section className="manifesto">
+      {/* <section className="manifesto">
         <div className="manifesto-orb orb-left" aria-hidden="true" />
         <div className="manifesto-orb orb-right" aria-hidden="true" />
         <p>For the table that wants</p>
@@ -311,7 +326,7 @@ export default function Home() {
           <span className="flame flame-b" />
           <span className="flame flame-c" />
         </div>
-      </section>
+      </section> */}
 
       <section className="catering section-shell" id="catering">
         <div className="catering-intro">
@@ -419,7 +434,7 @@ export default function Home() {
         <div className="footer-block">
           <span>Explore</span>
           <a href="#menu">Signature menu</a>
-          <a href="#story">Our story</a>
+          <a href="#vote">Vote for a special</a>
           <a href="#catering">Catering</a>
         </div>
         <div className="footer-block">
@@ -427,8 +442,8 @@ export default function Home() {
           <p>Planning an event? Prepare your catering enquiry with the details we need to get started.</p>
         </div>
         <div className="footer-bottom">
-          <span>© {new Date().getFullYear()} Deccan Flame</span>
-          <span>Hyderabadi cuisine · Reignited</span>
+          <span>© {new Date().getFullYear()} Deccan Flame - All Rights Reserved</span>
+          <span>Powered By VersaHQ</span>
         </div>
       </footer>
     </main>

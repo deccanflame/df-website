@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    match /users/{uid} {
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.role == "user"
+        && request.resource.data.email == request.auth.token.email;
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /specialPolls/{pollId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+
+      match /options/{optionId} {
+        allow read: if true;
+        allow create, update, delete: if isAdmin();
+      }
+
+      match /votes/{uid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(["optionId", "updatedAt"])
+          && request.resource.data.updatedAt == request.time
+          && get(/databases/$(database)/documents/specialPolls/$(pollId)).data.acceptingVotes == true
+          && get(/databases/$(database)/documents/specialPolls/$(pollId)/options/$(request.resource.data.optionId)).data.active == true;
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

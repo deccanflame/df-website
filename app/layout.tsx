@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { AuthModal } from "../components/AuthModal";
+import { AuthProvider } from "./providers";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -33,7 +35,12 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>
+          {children}
+          <AuthModal />
+        </AuthProvider>
+      </body>
     </html>
   );
 }
