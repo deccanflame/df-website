@@ -72,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let stopProfile: () => void = () => undefined;
     const stopAuth = onAuthStateChanged(firebaseAuth, (nextUser) => {
       stopProfile();
+      setProfile(null);
       setUser(nextUser);
 
       if (!nextUser) {

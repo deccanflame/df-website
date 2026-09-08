@@ -6,6 +6,8 @@ import {
   addDoc,
   collection,
   doc,
+  deleteDoc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -18,6 +20,7 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "../providers";
 import { firestore } from "../../lib/firebase";
+import { deleteDocuments } from "../../lib/deleteDocuments";
 
 type DishOption = {
   id: string;
@@ -57,16 +60,17 @@ export default function DashboardPage() {
     const optionsRef = query(collection(firestore, "specialPolls", "current", "options"), orderBy("createdAt", "asc"));
     const votesRef = collection(firestore, "specialPolls", "current", "votes");
 
+    const reportLoadError = () => setMessage("Dashboard data could not be loaded. Check your connection and admin access.");
     const stopPoll = onSnapshot(pollRef, (snapshot) => {
       const data = snapshot.data();
       if (data?.title) setPollTitle(data.title);
       if (data?.subtitle) setPollSubtitle(data.subtitle);
       if (typeof data?.acceptingVotes === "boolean") setAcceptingVotes(data.acceptingVotes);
-    });
+    }, reportLoadError);
     const stopOptions = onSnapshot(optionsRef, (snapshot) => {
       setOptions(snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<DishOption, "id">) })));
-    });
-    const stopVotes = onSnapshot(votesRef, (snapshot) => setVoteCount(snapshot.size));
+    }, reportLoadError);
+    const stopVotes = onSnapshot(votesRef, (snapshot) => setVoteCount(snapshot.size), reportLoadError);
     return () => {
       stopPoll();
       stopOptions();
@@ -76,6 +80,10 @@ export default function DashboardPage() {
 
   const savePoll = async () => {
     if (!firestore) return;
+    if (!pollTitle.trim() || !pollSubtitle.trim()) {
+      setMessage("Enter a poll title and supporting copy.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -113,6 +121,11 @@ export default function DashboardPage() {
       active,
       updatedAt: serverTimestamp(),
     };
+    if (!payload.name || !payload.description || !payload.category) {
+      setMessage("Complete the dish name, category and description.");
+      setBusy(false);
+      return;
+    }
     try {
       if (editingId) {
         await updateDoc(doc(firestore, "specialPolls", "current", "options", editingId), payload);
@@ -142,14 +155,16 @@ export default function DashboardPage() {
     if (!firestore || !window.confirm(`Delete ${option.name} and its votes?`)) return;
     setBusy(true);
     try {
+      // Hide first so no new votes can arrive after the query is taken.
+      const optionRef = doc(firestore, "specialPolls", "current", "options", option.id);
+      await updateDoc(optionRef, { active: false, updatedAt: serverTimestamp() });
       const relatedVotes = await getDocs(query(collection(firestore, "specialPolls", "current", "votes"), where("optionId", "==", option.id)));
-      const batch = writeBatch(firestore);
-      relatedVotes.forEach((vote) => batch.delete(vote.ref));
-      batch.delete(doc(firestore, "specialPolls", "current", "options", option.id));
-      await batch.commit();
+      await deleteDocuments(firestore, relatedVotes.docs.map((vote) => vote.ref));
+      await deleteDoc(optionRef);
+      if (editingId === option.id) resetDishForm();
       setMessage("Dish option deleted.");
     } catch {
-      setMessage("The dish option could not be deleted.");
+      setMessage("Deletion did not finish. The dish may be hidden; retry Delete to finish removing it and its votes.");
     } finally {
       setBusy(false);
     }
@@ -159,13 +174,15 @@ export default function DashboardPage() {
     if (!firestore || !window.confirm("Reset every vote in the current poll?")) return;
     setBusy(true);
     try {
+      const pollRef = doc(firestore, "specialPolls", "current");
+      const wasOpen = (await getDoc(pollRef)).data()?.acceptingVotes === true;
+      await updateDoc(pollRef, { acceptingVotes: false, updatedAt: serverTimestamp() });
       const votes = await getDocs(collection(firestore, "specialPolls", "current", "votes"));
-      const batch = writeBatch(firestore);
-      votes.forEach((vote) => batch.delete(vote.ref));
-      await batch.commit();
+      await deleteDocuments(firestore, votes.docs.map((vote) => vote.ref));
+      if (wasOpen) await updateDoc(pollRef, { acceptingVotes: true, updatedAt: serverTimestamp() });
       setMessage("All current votes have been reset.");
     } catch {
-      setMessage("Votes could not be reset.");
+      setMessage("The reset did not finish. Voting may remain closed; retry the reset before reopening it.");
     } finally {
       setBusy(false);
     }
@@ -285,14 +302,14 @@ export default function DashboardPage() {
               <article key={option.id}>
                 <span>0{index + 1}</span>
                 <div><p>{option.category} · {option.active ? "Live" : "Hidden"}</p><h3>{option.name}</h3><small>{option.description}</small></div>
-                <div><button type="button" onClick={() => editDish(option)}>Edit</button><button className="danger" type="button" onClick={() => removeDish(option)}>Delete</button></div>
+                <div><button type="button" disabled={busy} onClick={() => editDish(option)}>Edit</button><button className="danger" type="button" disabled={busy} onClick={() => removeDish(option)}>Delete</button></div>
               </article>
             ))}
           </div>
         )}
       </section>
 
-      {message && <div className="dashboard-toast" role="status">{message}<button type="button" onClick={() => setMessage("")}>×</button></div>}
+      {message && <div className="dashboard-toast" role="status">{message}<button type="button" aria-label="Dismiss notification" onClick={() => setMessage("")}>×</button></div>}
     </main>
   );
 }
