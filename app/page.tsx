@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { VoteWidget } from "../components/VoteWidget";
 import { useAuth } from "./providers";
+import { cateringEmail, localDate, openCateringInquiry } from "../lib/catering";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 const menuItems = [
   {
@@ -52,9 +54,17 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [inquiryPrepared, setInquiryPrepared] = useState(false);
+  const [inquiryError, setInquiryError] = useState("");
+  const [minimumDate, setMinimumDate] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  useFocusTrap(menuOpen, menuRef, closeMenu);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setLoaded(true), 350);
+    const timer = window.setTimeout(() => {
+      setLoaded(true);
+      setMinimumDate(localDate());
+    }, 350);
     const onPointerMove = (event: PointerEvent) => {
       document.documentElement.style.setProperty("--mx", `${event.clientX}px`);
       document.documentElement.style.setProperty("--my", `${event.clientY}px`);
@@ -80,13 +90,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = menuOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [menuOpen]);
-
-  useEffect(() => {
     const touchDevice = window.matchMedia("(hover: none), (pointer: coarse)");
     if (!touchDevice.matches || !("IntersectionObserver" in window)) return;
 
@@ -104,32 +107,15 @@ export default function Home() {
     return () => observer.disconnect();
   }, []);
 
-  const closeMenu = () => setMenuOpen(false);
-
   const prepareCateringInquiry = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const value = (name: string) => String(form.get(name) ?? "").trim();
-    const subject = `Deccan Flame catering enquiry — ${value("eventType") || "Event"}`;
-    const body = [
-      "Hello Deccan Flame,",
-      "",
-      "I’d like to discuss catering for an upcoming event.",
-      "",
-      `Name: ${value("name")}`,
-      `Email: ${value("email")}`,
-      `Phone: ${value("phone") || "Not provided"}`,
-      `Event type: ${value("eventType")}`,
-      `Event date: ${value("eventDate")}`,
-      `Guest count: ${value("guestCount")}`,
-      `Event location: ${value("location") || "Not provided"}`,
-      `Dietary needs / notes: ${value("notes") || "None provided"}`,
-      "",
-      "Thank you.",
-    ].join("\n");
-
-    setInquiryPrepared(true);
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setInquiryError("");
+    try {
+      openCateringInquiry(new FormData(event.currentTarget));
+      setInquiryPrepared(true);
+    } catch (error) {
+      setInquiryError(error instanceof Error ? error.message : "Please check your event details.");
+    }
   };
 
   return (
@@ -142,7 +128,15 @@ export default function Home() {
       <div className="grain" aria-hidden="true" />
       <div className="embers" aria-hidden="true">
         {Array.from({ length: 18 }, (_, index) => (
-          <span key={index} style={{ "--i": index } as React.CSSProperties} />
+          <span
+            key={index}
+            style={{
+              "--i": index,
+              "--ember-size": `${2 + index % 3}px`,
+              "--ember-duration": `${7 + (index % 5) * 1.1}s`,
+              "--ember-drift": `${(index % 2) * 42 - 20}px`,
+            } as React.CSSProperties}
+          />
         ))}
       </div>
 
@@ -171,6 +165,11 @@ export default function Home() {
           <a className="nav-cta" href="#catering">
             Plan catering <span aria-hidden="true">↗</span>
           </a>
+          <a className="mobile-call-button" href="tel:+14805771274" aria-label="Call Deccan Flame at +1 480-577-1274">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M8 3H5a2 2 0 0 0-2 2c0 8.8 7.2 16 16 16a2 2 0 0 0 2-2v-3l-5-2-2 2a14 14 0 0 1-6-6l2-2-2-5Z" />
+            </svg>
+          </a>
           <button
             className="menu-button"
             type="button"
@@ -184,8 +183,9 @@ export default function Home() {
         </div>
       </header>
 
-      <div className={`mobile-menu ${menuOpen ? "is-open" : ""}`}>
+      <div ref={menuRef} className={`mobile-menu ${menuOpen ? "is-open" : ""}`} role={menuOpen ? "dialog" : undefined} aria-modal={menuOpen || undefined} aria-label="Navigation menu" inert={!menuOpen} tabIndex={-1}>
         <div className="mobile-menu-inner">
+          <button className="menu-close" type="button" onClick={closeMenu} aria-label="Close navigation menu">Close ×</button>
           <p>Navigate the feast</p>
           <a onClick={closeMenu} href="#menu">
             <span>02</span> Signature menu
@@ -314,7 +314,7 @@ export default function Home() {
         </div>
       </section>
 
-      <VoteWidget />
+      <VoteWidget key={user?.uid ?? "guest"} />
 
       {/* <section className="manifesto">
         <div className="manifesto-orb orb-left" aria-hidden="true" />
@@ -396,11 +396,11 @@ export default function Home() {
             <div className="field-row">
               <label>
                 <span>Event date</span>
-                <input name="eventDate" type="date" required />
+                <input name="eventDate" type="date" min={minimumDate} required />
               </label>
               <label>
                 <span>Guest count</span>
-                <input name="guestCount" type="number" min="1" inputMode="numeric" placeholder="How many guests?" required />
+                <input name="guestCount" type="number" min="1" step="1" inputMode="numeric" placeholder="How many guests?" required />
               </label>
             </div>
 
@@ -415,12 +415,17 @@ export default function Home() {
             </label>
 
             <button className="catering-submit" type="submit">
-              <span>{inquiryPrepared ? "Email draft opened" : "Prepare catering enquiry"}</span>
-              <i aria-hidden="true">↗</i>
+              <span>{inquiryPrepared ? "Email draft prepared" : "Prepare catering enquiry"}</span>
+              <i aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+                  <path d="M5 19 19 5M5 5h14v14" />
+                </svg>
+              </i>
             </button>
+            {inquiryError && <p role="alert">{inquiryError}</p>}
             <p className="form-note">
               This prepares a complete email draft in your email app. No details
-              are sent until you review and send it.
+              are sent until you review and send it. You can also email <a href={`mailto:${cateringEmail}`}>{cateringEmail}</a> directly.
             </p>
           </form>
         </div>

@@ -24,7 +24,9 @@ export function VoteWidget() {
   const { user, profile, configured, openAuth } = useAuth();
   const [pollTitle, setPollTitle] = useState("Choose our next weekend special");
   const [pollSubtitle, setPollSubtitle] = useState("One vote. Four contenders. You decide what reaches the flame next.");
-  const [acceptingVotes, setAcceptingVotes] = useState(true);
+  const [acceptingVotes, setAcceptingVotes] = useState(!configured);
+  const [pollError, setPollError] = useState("");
+  const [optionsError, setOptionsError] = useState("");
   const [options, setOptions] = useState<DishOption[]>(configured ? [] : previewOptions);
   const [voteCounts, setVoteCounts] = useState<Record<string, number>>({});
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -40,15 +42,24 @@ export function VoteWidget() {
       const data = snapshot.data();
       if (data?.title) setPollTitle(data.title);
       if (data?.subtitle) setPollSubtitle(data.subtitle);
-      if (typeof data?.acceptingVotes === "boolean") setAcceptingVotes(data.acceptingVotes);
+      setAcceptingVotes(data?.acceptingVotes === true);
+      setPollError("");
+    }, () => {
+      setAcceptingVotes(false);
+      setPollError("The poll could not be loaded. Please try again later.");
     });
     const stopOptions = onSnapshot(
       optionsRef,
       (snapshot) => {
-        setOptions(snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<DishOption, "id">) })).filter((item) => item.active));
-        setStatus(snapshot.empty ? "The next poll is being prepared." : "Sign in to cast your vote.");
+        const activeOptions = snapshot.docs.map((item) => ({ ...(item.data() as Omit<DishOption, "id">), id: item.id })).filter((item) => item.active);
+        setOptions(activeOptions);
+        setOptionsError("");
+        setStatus(activeOptions.length ? "Choose the dish you want to see next." : "The next poll is being prepared.");
       },
-      () => setStatus("The dish list could not be loaded. Check your Firebase rules."),
+      () => {
+        setOptions([]);
+        setOptionsError("The dish list could not be loaded. Please try again later.");
+      },
     );
 
     return () => {
@@ -80,14 +91,14 @@ export function VoteWidget() {
 
   const visibleSelection = user ? selectedOption : null;
   const totalVotes = useMemo(
-    () => user ? Object.values(voteCounts).reduce((sum, count) => sum + count, 0) : 0,
-    [user, voteCounts],
+    () => user ? options.reduce((sum, option) => sum + (voteCounts[option.id] ?? 0), 0) : 0,
+    [user, options, voteCounts],
   );
-  const visibleStatus = !configured
+  const visibleStatus = pollError || optionsError || (!configured
     ? "Connect Firebase to activate live voting."
     : !user
       ? options.length ? "Sign in to cast your vote." : status
-      : status;
+      : status);
 
   const vote = async (optionId: string) => {
     if (!configured || !firestore) {

@@ -106,17 +106,16 @@ input {
 }
 
 .embers span {
-  --size: calc(2px + (var(--i) % 3) * 1px);
   position: absolute;
-  width: var(--size);
-  height: var(--size);
+  width: var(--ember-size);
+  height: var(--ember-size);
   left: calc((var(--i) * 5.7%) + 2%);
   bottom: -20px;
   border-radius: 50%;
   background: var(--ember);
   box-shadow: 0 0 10px var(--ember);
   opacity: 0;
-  animation: ember-rise calc(7s + (var(--i) % 5) * 1.1s) linear infinite;
+  animation: ember-rise var(--ember-duration) linear infinite;
   animation-delay: calc(var(--i) * -0.8s);
 }
 
@@ -124,7 +123,7 @@ input {
   0% { transform: translate3d(0, 0, 0) scale(0.5); opacity: 0; }
   15% { opacity: 0.75; }
   80% { opacity: 0.15; }
-  100% { transform: translate3d(calc((var(--i) % 2) * 42px - 20px), -105vh, 0) scale(1.2); opacity: 0; }
+  100% { transform: translate3d(var(--ember-drift), -105vh, 0) scale(1.2); opacity: 0; }
 }
 
 .nav-shell {
@@ -250,6 +249,10 @@ input {
   gap: 14px;
 }
 
+.mobile-call-button {
+  display: none;
+}
+
 .account-pill {
   height: 44px;
   padding: 0 15px 0 6px;
@@ -335,6 +338,18 @@ input {
   flex-direction: column;
   gap: 17px;
 }
+
+.menu-close {
+  align-self: flex-end;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: var(--gold);
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.form-note a { text-decoration: underline; overflow-wrap: anywhere; }
 
 .mobile-menu-inner > p,
 .mobile-menu-inner > small {
@@ -2413,8 +2428,9 @@ input {
 }
 
 .catering-submit i {
-  width: 46px;
-  height: 46px;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -2523,7 +2539,8 @@ footer {
   inset: 0;
   padding: 24px;
   display: grid;
-  place-items: center;
+  align-items: safe center;
+  justify-items: center;
   overflow-y: auto;
   background:
     radial-gradient(circle at 76% 18%, rgba(240,106,0,.2), transparent 31%),
@@ -3395,6 +3412,33 @@ footer {
   .nav-shell {
     height: 82px;
     padding-inline: 18px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .nav-actions {
+    gap: 8px;
+  }
+
+  .mobile-call-button {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: rgba(5, 3, 2, .5);
+    color: var(--gold);
+  }
+
+  .mobile-call-button:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
+  }
+
+  .mobile-call-button:active {
+    background: rgba(232, 182, 64, .14);
   }
 
   .brand-mark {

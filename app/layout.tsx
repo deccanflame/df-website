@@ -1,16 +1,10 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { AuthModal } from "../components/AuthModal";
 import { AuthProvider } from "./providers";
 import "./globals.css";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-
-  return {
-    metadataBase: new URL(`${protocol}://${host}`),
+export const metadata: Metadata = {
+    metadataBase: new URL("https://deccanflame.com"),
     title: "Deccan Flame | Hyderabadi Cuisine, Reignited",
     description:
       "Ancient technique, fearless flavour. Discover Deccan Flame's modern expression of authentic Hyderabadi cuisine.",
@@ -29,8 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description: "Authentic. Bold. Unforgettable.",
       images: ["/og.png"],
     },
-  };
-}
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
