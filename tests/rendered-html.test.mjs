@@ -38,6 +38,8 @@ test("server-renders the complete Deccan Flame experience in the intended order"
   assert.match(html, /Catering enquiries/);
   assert.match(html, /instagram\.com\/deccanflame4/);
   assert.match(html, /facebook\.com\/deccanflame/);
+  assert.match(html, /mailto:deccanflame1@gmail.com/);
+  assert.match(html, /https:\/\/deccanflame.com\/og.png/);
   assert.match(html, /Sign in or register/);
   assert.match(html, /mutton-dum-biryani\.png/);
   assert.match(html, /mutton-haleem\.png/);
@@ -92,6 +94,10 @@ test("server-renders the complete restaurant menu and homepage menu link", async
   ]) {
     assert.match(menuHtml, new RegExp(item));
   }
+});
+
+test("unknown routes return a real 404 response", async () => {
+  assert.equal((await render("/does-not-exist")).status, 404);
 });
 
 test("ships Firebase auth, live voting, and role-gated admin controls", async () => {

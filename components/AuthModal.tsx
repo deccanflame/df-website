@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { useAuth } from "../app/providers";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 function friendlyAuthError(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
@@ -14,6 +15,11 @@ function friendlyAuthError(error: unknown) {
 }
 
 export function AuthModal() {
+  const { authOpen } = useAuth();
+  return authOpen ? <AuthDialog /> : null;
+}
+
+function AuthDialog() {
   const {
     authOpen,
     authMode,
@@ -30,20 +36,8 @@ export function AuthModal() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    if (!authOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMessage("");
-        closeAuth();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [authOpen, authMode, closeAuth]);
-
-  if (!authOpen) return null;
+  const dialogRef = useRef<HTMLElement>(null);
+  useFocusTrap(authOpen, dialogRef, closeAuth);
 
   const dismiss = () => {
     setMessage("");
@@ -57,6 +51,10 @@ export function AuthModal() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage("");
+    if (authMode === "register" && !name.trim()) {
+      setMessage("Enter your name.");
+      return;
+    }
     if (authMode === "register" && password !== confirmPassword) {
       setMessage("Passwords do not match.");
       return;
@@ -94,7 +92,7 @@ export function AuthModal() {
 
   return (
     <div className="auth-backdrop" onMouseDown={closeFromBackdrop}>
-      <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <section ref={dialogRef} className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1}>
         <button className="auth-close" type="button" onClick={dismiss} aria-label="Close account dialog">×</button>
         <div className="auth-brand">
           <img src="/deccan-flame-logo.webp" alt="" />
@@ -111,8 +109,8 @@ export function AuthModal() {
         ) : (
           <>
             <div className="auth-tabs" aria-label="Account action">
-              <button className={authMode === "login" ? "active" : ""} type="button" onClick={() => { setMessage(""); setAuthMode("login"); }}>Sign in</button>
-              <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => { setMessage(""); setAuthMode("register"); }}>Register</button>
+              <button className={authMode === "login" ? "active" : ""} type="button" disabled={busy} onClick={() => { setMessage(""); setPassword(""); setConfirmPassword(""); setAuthMode("login"); }}>Sign in</button>
+              <button className={authMode === "register" ? "active" : ""} type="button" disabled={busy} onClick={() => { setMessage(""); setPassword(""); setConfirmPassword(""); setAuthMode("register"); }}>Register</button>
             </div>
             <div className="auth-heading">
               <p>{authMode === "login" ? "Welcome back" : "Join the table"}</p>
