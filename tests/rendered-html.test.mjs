@@ -36,6 +36,8 @@ test("server-renders the complete Deccan Flame experience in the intended order"
   assert.match(html, /class="poll-options/);
   assert.doesNotMatch(html, /class="vote-dish/);
   assert.match(html, /Catering enquiries/);
+  assert.match(html, /instagram\.com\/deccanflame4/);
+  assert.match(html, /facebook\.com\/deccanflame/);
   assert.match(html, /mailto:deccanflame1@gmail.com/);
   assert.match(html, /https:\/\/deccanflame.com\/og.png/);
   assert.match(html, /Sign in or register/);
@@ -49,6 +51,49 @@ test("server-renders the complete Deccan Flame experience in the intended order"
   const voteIndex = html.indexOf('id="vote"');
   const cateringIndex = html.indexOf('id="catering"');
   assert.ok(menuIndex >= 0 && voteIndex > menuIndex && cateringIndex > voteIndex);
+});
+
+test("server-renders the complete restaurant menu and homepage menu link", async () => {
+  const [homeResponse, menuResponse] = await Promise.all([render(), render("/menu")]);
+  assert.equal(homeResponse.status, 200);
+  assert.equal(menuResponse.status, 200);
+
+  const [homeHtml, menuHtml] = await Promise.all([homeResponse.text(), menuResponse.text()]);
+  assert.match(homeHtml, /href="\/menu"[^>]*>.*View full menu/is);
+  assert.match(menuHtml, /<title>Full Menu \| Deccan Flame<\/title>/i);
+
+  for (const category of ["Appetizers", "Biryani", "Indo Chinese", "Tandoori", "Curries", "Breads", "Chai &amp; Snacks"]) {
+    assert.match(menuHtml, new RegExp(category));
+  }
+
+  for (const item of [
+    "Chicken 65",
+    "Chicken Manchurian",
+    "Paneer 65",
+    "Hyderabadi Mutton Dum Biryani",
+    "Hyderabadi Chicken Dum Biryani",
+    "Chicken 65 Biryani",
+    "Tandoori Chicken Biryani",
+    "Chicken Fried Rice",
+    "Egg Fried Rice",
+    "Veg Fried Rice",
+    "Chicken Noodles",
+    "Egg Noodles",
+    "Veg Noodles",
+    "Tandoori Chicken Kabab",
+    "Tandoori Tikka Kabab",
+    "Butter Chicken",
+    "Dum Ka Chicken",
+    "Paneer Butter Masala",
+    "Garlic Naan",
+    "Butter Naan",
+    "Rumali Roti",
+    "Chai",
+    "Samosa 2pc",
+    "Combo",
+  ]) {
+    assert.match(menuHtml, new RegExp(item));
+  }
 });
 
 test("unknown routes return a real 404 response", async () => {

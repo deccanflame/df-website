@@ -4,7 +4,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 
 const output = new URL("../out/", import.meta.url);
-for (const page of ["index.html", "dashboard/index.html", "404.html"]) {
+for (const page of ["index.html", "menu/index.html", "dashboard/index.html", "404.html"]) {
   test(`static export provides ${page} with locally available assets`, async () => {
     const html = await readFile(new URL(page, output), "utf8");
     const dom = new JSDOM(html);
