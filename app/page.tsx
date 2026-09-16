@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { VoteWidget } from "../components/VoteWidget";
 import { useAuth } from "./providers";
 
@@ -276,8 +277,13 @@ export default function Home() {
       <section className="menu-section" id="menu">
         <div className="section-shell menu-heading">
           <div>
-            <div className="section-kicker light">
-              <span>02</span><p>Signature plates</p>
+            <div className="menu-kicker-row">
+              <div className="section-kicker light">
+                <span>02</span><p>Signature plates</p>
+              </div>
+              <Link className="full-menu-link" href="/menu">
+                <span>View full menu</span><i aria-hidden="true">↗</i>
+              </Link>
             </div>
             <h2>The icons,<br /><em>set ablaze.</em></h2>
           </div>
@@ -437,7 +443,24 @@ export default function Home() {
           <a href="#vote">Vote for a special</a>
           <a href="#catering">Catering</a>
         </div>
-        <div className="footer-block">
+        <div className="footer-block footer-social">
+          <span>Social</span>
+          <div className="footer-social-icons">
+            <a href="https://www.instagram.com/deccanflame4/" target="_blank" rel="noreferrer" aria-label="Deccan Flame on Instagram" title="Instagram">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="5" />
+                <circle cx="12" cy="12" r="4.1" />
+                <circle className="social-icon-dot" cx="17.4" cy="6.7" r="1" />
+              </svg>
+            </a>
+            <a href="https://www.facebook.com/deccanflame" target="_blank" rel="noreferrer" aria-label="Deccan Flame on Facebook" title="Facebook">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14.2 21v-8h2.7l.4-3.1h-3.1V8c0-.9.3-1.5 1.6-1.5h1.7V3.7c-.3 0-1.3-.1-2.5-.1-2.5 0-4.2 1.5-4.2 4.4v1.9H8v3.1h2.8v8h3.4Z" />
+              </svg>
+            </a>
+          </div>
+        </div>
+        <div className="footer-block footer-details">
           <span>Stay close</span>
           <p>Planning an event? Prepare your catering enquiry with the details we need to get started.</p>
         </div>
