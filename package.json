@@ -9,12 +9,15 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run test:unit && npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run test:unit && npm run test:ordering && npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit --incremental false",
     "build:static": "STATIC_EXPORT=true next build --webpack",
+    "build:production": "PRODUCTION_ORDERING_BUILD=true STATIC_EXPORT=true next build --webpack",
+    "check:production": "node scripts/check-production.mjs",
     "test:unit": "vitest run",
+    "test:ordering": "node --test tests/square.test.mjs tests/request-security.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore,auth --project demo-deccan-flame --config firebase.test.json \"node --test --test-concurrency=1 tests/firestore-rules.test.mjs tests/firebase-auth.test.mjs\"",
     "test:static": "npm run build:static && node --test tests/static-export.test.mjs",
     "test:all": "npm run lint && npm run typecheck && npm test && npm run test:static && npm run test:rules"
@@ -27,8 +30,8 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.54.4",
-    "@cloudflare/workers-types": "5.20260907.1",
+    "@cloudflare/vite-plugin": "1.57.1",
+    "@cloudflare/workers-types": "5.20260921.1",
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/postcss": "4.2.1",
     "@testing-library/react": "^16.3.3",
@@ -41,7 +44,7 @@
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.4",
-    "firebase-tools": "^15.29.0",
+    "firebase-tools": "15.30.2",
     "jsdom": "^29.1.1",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
@@ -49,7 +52,12 @@
     "vinext": "0.0.50",
     "vite": "8.2.2",
     "vitest": "^5.0.0",
-    "wrangler": "4.129.0"
+    "wrangler": "4.136.1"
+  },
+  "overrides": {
+    "image-size": "2.0.4",
+    "gaxios@6.7.1": { "uuid": "11.1.1" },
+    "@esbuild-kit/core-utils": { "esbuild": "0.25.12" }
   },
   "type": "module"
 }

@@ -100,6 +100,13 @@ test("unknown routes return a real 404 response", async () => {
   assert.equal((await render("/does-not-exist")).status, 404);
 });
 
+test("ordering API reaches the backend and fails safely without Square credentials", async () => {
+  const response = await render("/api/square/menu");
+  assert.equal(response.status, 503);
+  assert.match(response.headers.get("content-type"), /application\/json/);
+  assert.match((await response.json()).error, /Online ordering is not available yet/);
+});
+
 test("ships Firebase auth, live voting, and role-gated admin controls", async () => {
   const [dashboardResponse, provider, widget, dashboard, rules, envExample] = await Promise.all([
     render("/dashboard"),

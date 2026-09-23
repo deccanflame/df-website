@@ -14,8 +14,14 @@ service cloud.firestore {
     match /users/{uid} {
       allow create: if signedIn()
         && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(["role", "email", "displayName", "createdAt", "updatedAt"])
         && request.resource.data.role == "user"
-        && request.resource.data.email == request.auth.token.email;
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 100
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow update, delete: if isAdmin();
     }
@@ -46,4 +52,3 @@ service cloud.firestore {
     }
   }
 }
-

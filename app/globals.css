@@ -1012,26 +1012,12 @@ input {
   transition: color 220ms ease, background 220ms ease, border-color 220ms ease, transform 220ms ease;
 }
 
-.full-menu-link i {
-  color: var(--red);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 15px;
-  font-style: normal;
-  transition: transform 220ms ease;
-}
-
 .full-menu-link:hover,
 .full-menu-link:focus-visible {
   color: var(--cream);
   background: var(--ink);
   border-color: var(--ink);
   transform: translateY(-2px);
-}
-
-.full-menu-link:hover i,
-.full-menu-link:focus-visible i {
-  color: var(--gold);
-  transform: translate(2px, -2px);
 }
 
 .section-kicker.light {

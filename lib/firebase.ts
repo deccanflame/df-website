@@ -18,7 +18,7 @@ export const firebaseConfigured = Boolean(
     firebaseConfig.appId,
 );
 
-const firebaseApp: FirebaseApp | null = firebaseConfigured
+export const firebaseApp: FirebaseApp | null = firebaseConfigured
   ? getApps().length
     ? getApp()
     : initializeApp(firebaseConfig)
@@ -26,4 +26,3 @@ const firebaseApp: FirebaseApp | null = firebaseConfigured
 
 export const firebaseAuth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
 export const firestore: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
-

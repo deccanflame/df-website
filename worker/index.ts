@@ -1,8 +1,16 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { handleOrderingRequest } from "../functions/square.mjs";
 
 interface Env {
+  SQUARE_ACCESS_TOKEN?: string;
+  SQUARE_LOCATION_ID?: string;
+  SQUARE_ENVIRONMENT?: string;
+  SQUARE_ORDERING_ENABLED?: string;
+  SQUARE_PICKUP_MINUTES?: string;
+  SQUARE_MENU_CATEGORY_IDS?: string;
+  ORDERING_ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
   DB: D1Database;
   IMAGES: {
@@ -28,6 +36,15 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith("/api/square/")) {
+      // This worker is only for local Sandbox development. Production ordering
+      // must use Firebase Functions, which enforces App Check and shared limits.
+      if (env.SQUARE_ENVIRONMENT === "production" && url.pathname.replace(/\/$/, "") === "/api/square/checkout") {
+        return Response.json({ error: "Production checkout must use the protected Firebase backend." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+      }
+      return handleOrderingRequest(request, env);
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
