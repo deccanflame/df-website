@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SquareMenu } from "../../components/SquareMenu";
+import "./ordering.css";
 
 export const metadata: Metadata = {
   title: "Full Menu | Deccan Flame",
@@ -110,7 +112,7 @@ export default function MenuPage() {
         </Link>
         <div className="full-menu-nav-actions">
           <span className="halal-badge"><i aria-hidden="true">✦</i> 100% Halal</span>
-          <Link href="/">Back home <span aria-hidden="true">↗</span></Link>
+          <Link href="/">Back home</Link>
         </div>
       </header>
 
@@ -121,10 +123,11 @@ export default function MenuPage() {
           <p>Hyderabadi classics, tandoori fire and Indo-Chinese favourites—made bold, served without compromise.</p>
         </div>
         <div className="full-menu-seal" aria-hidden="true">
-          <span>24</span><small>dishes</small><i>✦</i>
+          <span>Fresh</span><small>from our kitchen</small><i>✦</i>
         </div>
       </section>
 
+      <SquareMenu>
       <nav className="menu-category-nav" aria-label="Menu categories">
         <div>
           {menuSections.map((section) => (
@@ -155,6 +158,8 @@ export default function MenuPage() {
         </div>
       </section>
 
+      </SquareMenu>
+
       <section className="menu-contact-strip" aria-label="Restaurant contact details">
         <div>
           <span>Call to order</span>
@@ -173,7 +178,7 @@ export default function MenuPage() {
       </section>
 
       <footer className="full-menu-footer">
-        <p>Prices shown are from the current restaurant menu and may change.</p>
+        <p>Online prices and availability are confirmed at checkout. For catering and allergies, please call us.</p>
         <Link href="/#catering">Planning an event? Explore catering <span aria-hidden="true">↗</span></Link>
       </footer>
     </main>

@@ -1,0 +1,9 @@
+# Local vinext server only. Copy to .dev.vars (ignored by Git).
+# Use a Square SANDBOX token and matching sandbox location first.
+SQUARE_ACCESS_TOKEN=
+SQUARE_LOCATION_ID=
+SQUARE_ENVIRONMENT=sandbox
+SQUARE_ORDERING_ENABLED=false
+SQUARE_PICKUP_MINUTES=20
+SQUARE_MENU_CATEGORY_IDS=
+ORDERING_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000

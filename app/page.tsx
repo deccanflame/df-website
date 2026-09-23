@@ -154,6 +154,7 @@ export default function Home() {
 
         <nav className="desktop-nav" aria-label="Primary navigation">
           <a href="#menu">Signature menu</a>
+          <Link href="/menu">Order online</Link>
           <a href="#vote">Vote</a>
           <a href="#catering">Catering</a>
         </nav>
@@ -188,6 +189,7 @@ export default function Home() {
         <div className="mobile-menu-inner">
           <button className="menu-close" type="button" onClick={closeMenu} aria-label="Close navigation menu">Close ×</button>
           <p>Navigate the feast</p>
+          <Link onClick={closeMenu} href="/menu"><span>↗</span> Order online</Link>
           <a onClick={closeMenu} href="#menu">
             <span>02</span> Signature menu
           </a>
@@ -282,7 +284,7 @@ export default function Home() {
                 <span>02</span><p>Signature plates</p>
               </div>
               <Link className="full-menu-link" href="/menu">
-                <span>View full menu</span><i aria-hidden="true">↗</i>
+                <span>View full menu</span>
               </Link>
             </div>
             <h2>The icons,<br /><em>set ablaze.</em></h2>

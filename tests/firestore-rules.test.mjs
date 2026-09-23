@@ -112,6 +112,19 @@ test("members cannot promote themselves or delete their profiles", async () => {
   await assertFails(updateDoc(doc(alice, "users/alice"), { role: "admin" }));
   await assertFails(deleteDoc(doc(alice, "users/alice")));
 });
+test("new profiles reject unexpected fields, oversized names and forged timestamps", async () => {
+  const db = environment.authenticatedContext("new", { email: "new@example.com" }).firestore();
+  const profile = { role: "user", email: "new@example.com", displayName: "Guest", createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  for (const changes of [{ admin: true }, { displayName: "x".repeat(101) }, { displayName: {} }, { createdAt: new Date(0) }]) {
+    await assertFails(setDoc(doc(db, "users/new"), { ...profile, ...changes }));
+  }
+});
+test("ordering rate-limit records cannot be read or modified through browser clients", async () => {
+  for (const db of [guest, alice, admin]) {
+    await assertFails(getDoc(doc(db, "_orderingRateLimits/bucket")));
+    await assertFails(setDoc(doc(db, "_orderingRateLimits/bucket"), { count: 0 }));
+  }
+});
 test("members can read only their own profile; admins can read others", async () => {
   await assertSucceeds(getDoc(doc(alice, "users/alice")));
   await assertFails(getDoc(doc(alice, "users/bob")));

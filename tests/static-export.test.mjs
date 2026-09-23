@@ -36,3 +36,14 @@ test("homepage anchors, image descriptions, and canonical social URLs survive ex
   assert.equal(document.querySelectorAll("h1").length, 1);
   dom.window.close();
 });
+
+test("full menu and back home links are text-only, including mobile", async () => {
+  for (const [page, label] of [["index.html", "View full menu"], ["menu/index.html", "Back home"]]) {
+    const dom = new JSDOM(await readFile(new URL(page, output), "utf8"));
+    const link = [...dom.window.document.querySelectorAll("a")].find(node => node.textContent.includes(label));
+    assert.ok(link, `Missing ${label} link`);
+    assert.equal(link.textContent.trim(), label);
+    assert.equal(link.querySelector("svg, i, [aria-hidden]"), null);
+    dom.window.close();
+  }
+});

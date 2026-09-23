@@ -4,6 +4,8 @@ Domain: **deccanflame.com**. Catering inbox: **deccanflame1@gmail.com**.
 
 The app now has a static export command, `npm run build:static`, that generates `out/`. Authentication, votes and admin data continue to use Firebase from the browser. The existing `npm run build` command still builds the Cloudflare/Sites version.
 
+Online ordering additionally requires the `squareOrdering` Firebase Function. See [Square setup](SQUARE_SETUP.md) for credentials, deployment order and pickup configuration. Deploy that backend before publishing the ordering frontend; the existing GitHub workflow only deploys Hosting. Square ordering cannot run on GitHub Pages without a separately hosted API.
+
 ## Choose the host
 
 **Firebase Hosting is the recommended production option for this site.** GitHub Pages says it is not intended for running an online business and that Pages sites should not be used for sensitive transactions such as sending passwords. This restaurant site includes catering enquiries and password sign-in. The GitHub instructions below explain the technical setup, but do not establish that this use is permitted; use Firebase Hosting for the complete production site unless GitHub confirms your intended use is allowed. [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)

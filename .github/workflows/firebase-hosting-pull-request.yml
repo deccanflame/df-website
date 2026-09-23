@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci && npm run build:static
+      - run: npm ci
+      - run: npm run lint && npm run typecheck && npm run test:unit && npm run test:ordering
+      - run: npm run build:static && node --test tests/static-export.test.mjs
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
