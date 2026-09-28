@@ -4,6 +4,7 @@ export const environment = {
   ORDERING_ALLOWED_ORIGINS: "http://localhost:3000",
 };
 export const openTime = new Date("2026-09-16T19:00:00Z");
+export const communityEnvironment = { ...environment, readCommunityCampaigns: async campaigns => campaigns, recordCommunityCheckout: async () => {} };
 export function catalogFixture() {
   return [
     { type: "CATEGORY", id: "biryani", category_data: { name: "Biryani" } },
@@ -37,7 +38,7 @@ export function squareMock({ objects = catalogFixture(), location = locationFixt
     if (path.includes("/locations/")) return Response.json({ location });
     if (path.endsWith("/catalog/list")) return Response.json(paginated && !new URL(url).searchParams.has("cursor") ? { objects: objects.slice(0, 2), cursor: "next-page" } : { objects: paginated ? objects.slice(2) : objects });
     if (path.endsWith("/inventory/counts/batch-retrieve")) return Response.json({ counts });
-    if (path.endsWith("/online-checkout/payment-links")) return Response.json({ payment_link: { url: "https://sandbox.square.link/u/test-checkout" } });
+    if (path.endsWith("/online-checkout/payment-links")) return Response.json({ payment_link: { url: "https://sandbox.square.link/u/test-checkout", order_id: "square-test-order" } });
     throw new Error(`Unexpected Square path: ${path}`);
   };
   return { fetcher, calls };

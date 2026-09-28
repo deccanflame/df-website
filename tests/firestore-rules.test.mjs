@@ -42,6 +42,36 @@ test("guests can read the poll and dish options", async () => {
   await assertSucceeds(getDoc(doc(guest, path)));
   await assertSucceeds(getDocs(collection(guest, `${path}/options`)));
 });
+
+const deliveryPath = "orderingSettings/communityDelivery";
+test("community aggregates and payment ledger cannot be read or forged from browsers, even by admins", async () => {
+  for (const db of [guest, alice, admin]) {
+    for (const path of ["communityCampaigns/test", "_communityOrders/test"]) {
+      await assertFails(getDoc(doc(db, path)));
+      await assertFails(setDoc(doc(db, path), { paidOrders: 5, foodSubtotal: 5000, qualifiedAt: "forged" }));
+      await assertFails(deleteDoc(doc(db, path)));
+    }
+  }
+});
+const deliverySettings = (extra = {}) => ({ communities: ["Northgate"], startTime: "19:00", endTime: "20:00", version: 1, updatedAt: serverTimestamp(), ...extra });
+test("only admins can create and update delivery settings; policy is public but other settings are not", async () => {
+  await assertFails(setDoc(doc(guest, deliveryPath), deliverySettings()));
+  await assertFails(setDoc(doc(alice, deliveryPath), deliverySettings()));
+  await assertSucceeds(setDoc(doc(admin, deliveryPath), deliverySettings()));
+  await assertSucceeds(getDoc(doc(guest, deliveryPath)));
+  await assertFails(getDoc(doc(guest, "orderingSettings/private")));
+  await assertFails(updateDoc(doc(alice, deliveryPath), deliverySettings({ version: 2 })));
+  await assertSucceeds(setDoc(doc(admin, deliveryPath), deliverySettings({ communities: ["Westgate"], startTime: "22:30", endTime: "01:15", version: 2 })));
+  await assertFails(setDoc(doc(admin, deliveryPath), deliverySettings({ version: 2 })));
+  await assertSucceeds(setDoc(doc(admin, deliveryPath), deliverySettings({ communities: [], version: 3 })));
+  await assertFails(deleteDoc(doc(admin, deliveryPath)));
+});
+test("delivery settings reject malformed fields, names, times, versions and timestamps", async () => {
+  for (const extra of [{ communities: [5] }, { communities: ["a", "a"] }, { communities: [""] }, { communities: [" "] }, { communities: ["a\nb"] }, { communities: ["a".repeat(61)] }, { communities: Array.from({ length: 21 }, (_, i) => `Name ${i}`) }, { startTime: "25:00" }, { startTime: "19:00:00" }, { endTime: "19:00" }, { version: 2 }, { updatedAt: new Date(0) }, { secret: "not allowed" }]) {
+    await assertFails(setDoc(doc(admin, deliveryPath), deliverySettings(extra)));
+  }
+  await assertSucceeds(setDoc(doc(admin, deliveryPath), deliverySettings({ communities: Array.from({ length: 20 }, (_, i) => `Community ${i}`) })));
+});
 test("guests cannot read member profiles or vote totals", async () => {
   await assertFails(getDoc(doc(guest, "users/alice")));
   await assertFails(getDocs(collection(guest, `${path}/votes`)));

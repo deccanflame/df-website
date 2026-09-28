@@ -243,10 +243,15 @@ export default function Home() {
             right now.
           </p>
           <div className="hero-actions reveal-item">
-            <a className="button button-primary" href="#menu">
-              <span>Explore the menu</span>
-              <i aria-hidden="true">↓</i>
-            </a>
+            <div className="hero-primary-actions">
+              <a className="button button-primary" href="#menu">
+                <span>Explore the menu</span>
+                <i aria-hidden="true">↓</i>
+              </a>
+              <Link className="button hero-order-link" href="/menu">
+                Place Order
+              </Link>
+            </div>
             <a className="text-link" href="#vote">
               Vote for the special <span aria-hidden="true">↗</span>
             </a>

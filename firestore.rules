@@ -47,6 +47,34 @@ service cloud.firestore {
       }
     }
 
+    match /orderingSettings/communityDelivery {
+      function validNameAt(names, index) {
+        return names.size() <= index || (names[index] is string
+          && names[index].matches('[^\\s\\x00-\\x1f\\x7f]([^\\x00-\\x1f\\x7f]{0,58}[^\\s\\x00-\\x1f\\x7f])?'));
+      }
+      function validSettings() {
+        let data = request.resource.data;
+        let names = data.communities;
+        return data.keys().hasOnly(['communities', 'startTime', 'endTime', 'version', 'updatedAt'])
+          && names is list && names.size() <= 20 && names.toSet().size() == names.size()
+          // Rules have no loops: explicitly validate the bounded list.
+          && validNameAt(names, 0) && validNameAt(names, 1) && validNameAt(names, 2) && validNameAt(names, 3)
+          && validNameAt(names, 4) && validNameAt(names, 5) && validNameAt(names, 6) && validNameAt(names, 7)
+          && validNameAt(names, 8) && validNameAt(names, 9) && validNameAt(names, 10) && validNameAt(names, 11)
+          && validNameAt(names, 12) && validNameAt(names, 13) && validNameAt(names, 14) && validNameAt(names, 15)
+          && validNameAt(names, 16) && validNameAt(names, 17) && validNameAt(names, 18) && validNameAt(names, 19)
+          && data.startTime is string && data.startTime.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+          && data.endTime is string && data.endTime.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+          && data.startTime != data.endTime
+          && data.version is int && data.version > 0 && data.version <= 1000000000
+          && data.updatedAt == request.time;
+      }
+      allow get: if true;
+      allow create: if isAdmin() && validSettings() && request.resource.data.version == 1;
+      allow update: if isAdmin() && validSettings() && request.resource.data.version == resource.data.version + 1;
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

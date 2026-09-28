@@ -21,6 +21,7 @@ import {
 import { useAuth } from "../providers";
 import { firestore } from "../../lib/firebase";
 import { deleteDocuments } from "../../lib/deleteDocuments";
+import { CommunityDeliveryAdmin } from "../../components/CommunityDeliveryAdmin";
 
 type DishOption = {
   id: string;
@@ -309,6 +310,7 @@ export default function DashboardPage() {
         )}
       </section>
 
+      <CommunityDeliveryAdmin />
       {message && <div className="dashboard-toast" role="status">{message}<button type="button" aria-label="Dismiss notification" onClick={() => setMessage("")}>×</button></div>}
     </main>
   );

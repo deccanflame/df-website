@@ -2,8 +2,10 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { handleOrderingRequest } from "../functions/square.mjs";
+import { readPublicDeliverySettings } from "../functions/community-delivery.mjs";
 
 interface Env {
+  ORDERING_FIREBASE_PROJECT_ID?: string;
   SQUARE_ACCESS_TOKEN?: string;
   SQUARE_LOCATION_ID?: string;
   SQUARE_ENVIRONMENT?: string;
@@ -43,7 +45,7 @@ const worker = {
       if (env.SQUARE_ENVIRONMENT === "production" && url.pathname.replace(/\/$/, "") === "/api/square/checkout") {
         return Response.json({ error: "Production checkout must use the protected Firebase backend." }, { status: 503, headers: { "Cache-Control": "no-store" } });
       }
-      return handleOrderingRequest(request, env);
+      return handleOrderingRequest(request, { ...env, readDeliverySettings: env.ORDERING_FIREBASE_PROJECT_ID ? () => readPublicDeliverySettings(env.ORDERING_FIREBASE_PROJECT_ID) : undefined });
     }
 
     if (url.pathname === "/_vinext/image") {

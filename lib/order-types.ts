@@ -6,8 +6,10 @@ export type SquareMenuItem = {
   image: string | null; variations: MenuVariation[]; modifierGroups: ModifierGroup[]; customizable: boolean;
 };
 export type SquareMenuData = {
+  communityProgressEnabled?: boolean;
+  deliverySettings?: { communities: string[]; startTime: string; endTime: string };
   items: SquareMenuItem[]; currency: string; sandbox: boolean; acceptingOrders: boolean;
-  message: string; pickupMinutes: number; location: { name: string; address: string; phone: string };
+  message: string; pickupMinutes: number; serverTime?: string; location: { name: string; address: string; phone: string };
 };
 export type CartLine = { variationId: string; modifierIds: string[]; quantity: number };
 

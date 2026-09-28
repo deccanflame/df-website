@@ -1,4 +1,6 @@
 // Shared by Firebase Functions and the local vinext Worker. Never import into a client component.
+import { DEFAULT_DELIVERY_SETTINGS, validateDeliverySettings, deliveryWindowLabel, isCommunityDeliveryWindow } from "./community-delivery.mjs";
+import { communityWindow, communityCampaignId, emptyCampaign, COMMUNITY_TERMS_VERSION, COMMUNITY_TERMS } from "./community-progress.mjs";
 const API_VERSION = "2026-09-16";
 const MAX_QUANTITY = 20;
 
@@ -103,7 +105,31 @@ function modifierGroups(item, objects, cfg, currency) {
   });
 }
 
+async function loadDeliverySettings(env) {
+  let deliverySettings;
+  try {
+    const saved = await env.readDeliverySettings?.();
+    deliverySettings = validateDeliverySettings(saved === undefined ? DEFAULT_DELIVERY_SETTINGS : saved);
+  } catch { throw new OrderingError(503, "Delivery settings are unavailable. Please try again or call us to order."); }
+  return deliverySettings;
+}
+
+const progressEnabled = env => typeof env.readCommunityCampaigns === "function" && typeof env.recordCommunityCheckout === "function";
+
+export async function loadCommunityProgress(env, now = new Date()) {
+  const cfg = config(env);
+  if (!progressEnabled(env)) return { enabled: false, serverTime: now.toISOString(), campaigns: [] };
+  const settings = await loadDeliverySettings(env);
+  const window = communityWindow(settings, now);
+  const defaults = await Promise.all(settings.communities.map(async community => emptyCampaign(await communityCampaignId(cfg.environment, cfg.locationId, community, window), community, window, cfg.environment)));
+  const saved = await env.readCommunityCampaigns(defaults);
+  // Never expose ledger data, payment IDs or arbitrary database fields publicly.
+  const campaigns = defaults.map((base, i) => ({ ...base, paidOrders: saved[i].paidOrders, foodSubtotal: saved[i].foodSubtotal, qualifiedAt: saved[i].qualifiedAt, updatedAt: saved[i].updatedAt }));
+  return { enabled: true, serverTime: now.toISOString(), campaigns };
+}
+
 export async function loadMenu(env, fetcher = fetch, now = new Date()) {
+  const deliverySettings = await loadDeliverySettings(env);
   const cfg = config(env);
   const { location } = await squareApi(cfg, `/locations/${encodeURIComponent(cfg.locationId)}`, null, fetcher);
   if (!location || location.status !== "ACTIVE" || !location.currency) throw new OrderingError(503, "Online ordering is temporarily unavailable.");
@@ -166,9 +192,9 @@ export async function loadMenu(env, fetcher = fetch, now = new Date()) {
   const open = isLocationOpen(location, now);
   const validPrep = Number.isInteger(cfg.prepMinutes) && cfg.prepMinutes >= 5 && cfg.prepMinutes <= 180;
   return {
-    items, currency: location.currency, sandbox: cfg.environment === "sandbox",
+    items, currency: location.currency, sandbox: cfg.environment === "sandbox", serverTime: now.toISOString(), deliverySettings, communityProgressEnabled: progressEnabled(env),
     acceptingOrders: cfg.enabled && open && validPrep,
-    message: !cfg.enabled || !validPrep ? "Online orders are currently paused. Please call us to order." : !open ? "Online pickup is currently closed. Please call us for opening hours." : "",
+    message: !cfg.enabled || !validPrep ? "Online orders are currently paused. Please call us to order." : !open ? "Online ordering is currently closed. Please call us for opening hours." : "",
     pickupMinutes: cfg.prepMinutes, location: {
       name: location.business_name || location.name,
       address: [location.address?.address_line_1, location.address?.locality, location.address?.administrative_district_level_1, location.address?.postal_code].filter(Boolean).join(", "),
@@ -184,15 +210,31 @@ export async function createCheckout(env, body, fetcher = fetch, now = new Date(
   if (!body || typeof body !== "object" || typeof body.idempotencyKey !== "string" || !/^[a-zA-Z0-9-]{16,64}$/.test(body.idempotencyKey)) bad("Please refresh your cart and try again.");
   if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 40) bad("Please add between 1 and 40 selections to your cart.");
   const customer = body.customer;
-  if (!customer || typeof customer.name !== "string" || customer.name.trim().length < 2 || customer.name.length > 100) bad("Please enter your name for pickup.");
-  if (typeof customer.phone !== "string" || !/^\+?[\d ()-]{10,24}$/.test(customer.phone)) bad("Please enter a valid pickup phone number.");
+  if (!customer || typeof customer.name !== "string" || customer.name.trim().length < 2 || customer.name.length > 100) bad("Please enter your name.");
+  if (typeof customer.phone !== "string" || !/^\+?[\d ()-]{10,24}$/.test(customer.phone)) bad("Please enter a valid phone number.");
   const digits = customer.phone.replace(/\D/g, "");
   const phone = digits.length === 10 ? `+1${digits}` : `+${digits}`;
-  if (!/^\+[1-9]\d{7,14}$/.test(phone)) bad("Please enter a valid pickup phone number.");
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) bad("Please enter a valid phone number.");
   if (typeof customer.email !== "string" || customer.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) bad("Please enter a valid email address.");
   if (body.note != null && (typeof body.note !== "string" || body.note.length > 400)) bad("Please keep order notes under 400 characters.");
+  // Older clients omitted this field and always created pickup orders.
+  const orderType = body.orderType === undefined ? "pickup" : body.orderType;
+  if (!["pickup", "delivery"].includes(orderType)) bad("Please choose pickup or delivery.");
   const menu = await loadMenu(env, fetcher, now); // Never trust prices, availability or options sent by the browser.
   if (!menu.acceptingOrders) throw new OrderingError(409, menu.message);
+  const communityOrder = orderType === "delivery" && isCommunityDeliveryWindow(now, menu.deliverySettings);
+  if (communityOrder && !body.community) throw new OrderingError(409, `Please select your community for delivery during ${deliveryWindowLabel(menu.deliverySettings)}.`);
+  if (communityOrder && !menu.deliverySettings.communities.includes(body.community)) throw new OrderingError(409, "Please select an available delivery community. The community list may have changed.");
+  const community = communityOrder ? body.community : null;
+  if (orderType === "delivery" && !communityOrder && (progressEnabled(env) || body.communityTermsAccepted)) throw new OrderingError(409, "Community delivery is outside its ordering window. Please choose pickup or return during the next window.");
+  let campaign;
+  if (communityOrder) {
+    if (!progressEnabled(env)) throw new OrderingError(503, "Community delivery tracking is not connected yet. Please choose pickup or call us.");
+    if (body.communityTermsAccepted !== COMMUNITY_TERMS_VERSION) bad("Please accept the community delivery minimum and pickup-or-refund policy.");
+    if (menu.currency !== "USD") throw new OrderingError(503, "Community delivery is unavailable for this currency.");
+    const window = communityWindow(menu.deliverySettings, now);
+    campaign = emptyCampaign(await communityCampaignId(cfg.environment, cfg.locationId, community, window), community, window, cfg.environment);
+  }
   const quantities = new Map();
   const lineItems = body.items.map(line => {
     if (!line || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > MAX_QUANTITY) bad("Choose a quantity between 1 and 20.");
@@ -215,20 +257,24 @@ export async function createCheckout(env, body, fetcher = fetch, now = new Date(
       ...(modifierIds.length ? { modifiers: [...modifierIds].sort().map(id => ({ catalog_object_id: id })) } : {}),
     };
   });
-  const recipient = { display_name: customer.name.trim(), phone_number: phone, email_address: customer.email.trim() };
+  const recipient = { display_name: `${customer.name.trim()}${community ? ` - ${community}` : ""}`, phone_number: phone, email_address: customer.email.trim() };
+  const deliveryTag = `Website delivery order${community ? ` - ${community}` : ""}`;
   const order = {
     location_id: cfg.locationId, line_items: lineItems,
     pricing_options: { auto_apply_taxes: true, auto_apply_discounts: true },
+    // Restaurant-managed delivery is intentionally a staff tag, not Square courier dispatch.
+    // Keep the hosted pickup checkout, as agreed with the restaurant.
     fulfillments: [{ type: "PICKUP", state: "PROPOSED", pickup_details: {
       recipient, schedule_type: "ASAP", prep_time_duration: `PT${cfg.prepMinutes}M`,
-      note: body.note?.trim() || "Website pickup order",
+      note: orderType === "delivery" ? [deliveryTag, body.note?.trim()].filter(Boolean).join("\n") : body.note?.trim() || "Website pickup order",
     } }],
   };
   // The same cart retry receives the same Square link, even across backend instances.
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ key: body.idempotencyKey, order })));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ key: body.idempotencyKey, order, ...(campaign ? { campaignId: campaign.id } : {}) })));
   const key = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
   const result = await squareApi(cfg, "/online-checkout/payment-links", {
     idempotency_key: key, order,
+    ...(campaign ? { payment_note: COMMUNITY_TERMS } : {}),
     checkout_options: { allow_tipping: true, merchant_support_email: "deccanflame1@gmail.com" },
     // Pickup contact details already live in fulfillment.pickup_details.recipient.
     // Square rejects pre_populated_data when an explicit fulfillment is supplied.
@@ -242,6 +288,10 @@ export async function createCheckout(env, body, fetcher = fetch, now = new Date(
   if (url.protocol !== "https:" || url.username || url.password || !checkoutHosts.includes(url.hostname)) {
     throw new OrderingError(502, "Square didn't return a valid checkout link.");
   }
+  if (campaign) {
+    try { await env.recordCommunityCheckout(result.payment_link?.order_id, campaign, now.toISOString()); }
+    catch { throw new OrderingError(503, "We couldn't register your community order. No payment was taken. Please try again."); }
+  }
   return { url: url.href };
 }
 
@@ -251,6 +301,7 @@ export async function handleOrderingRequest(request, env, fetcher = fetch) {
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
   try {
     if (path === "/api/square/menu" && request.method === "GET") return json(await loadMenu(env, fetcher));
+    if (path === "/api/square/community-progress" && request.method === "GET") return json(await loadCommunityProgress(env));
     if (path === "/api/square/checkout" && request.method === "POST") {
       const origin = request.headers.get("origin");
       const allowed = (env.ORDERING_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean);

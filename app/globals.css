@@ -574,6 +574,18 @@ input {
   gap: 32px;
 }
 
+.hero-primary-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.hero-primary-actions .hero-order-link {
+  justify-content: center;
+  padding: 0 24px;
+  color: var(--gold);
+  background: rgba(5, 3, 2, .55);
+}
+
 .button {
   min-width: 212px;
   height: 58px;
@@ -3055,6 +3067,25 @@ footer {
   gap: 18px;
 }
 
+.community-admin { margin-top: 24px; }
+.community-admin > p, .community-admin fieldset > p { color: var(--cream); font-size: 14px; line-height: 1.6; margin: 16px 0; }
+.community-admin fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.community-admin label { display: grid; gap: 8px; font-size: 14px; }
+.community-admin input { min-width: 0; width: 100%; padding: 12px; color-scheme: dark; font-size: 16px; color: var(--cream); background: #100c08; border: 1px solid var(--line); }
+.community-admin input:focus-visible, .community-admin button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.community-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.community-list { list-style: none; margin: 24px 0; padding: 0; }
+.community-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
+.community-list li > span { overflow-wrap: anywhere; }
+.community-list li > div { display: flex; gap: 12px; }
+.community-admin button { min-height: 44px; font-size: 14px; cursor: pointer; }
+.community-list button, .community-reload { padding: 8px 12px; background: transparent; color: var(--gold); border: 1px solid var(--line); }
+.community-list button.danger, .community-admin [role="alert"] { color: #ffb9a3; }
+.community-admin button:disabled { opacity: .5; cursor: not-allowed; }
+.community-save { margin: 24px 0; flex-wrap: wrap; }
+.community-save span { font-size: 14px; color: var(--gold); }
+@media (max-width: 480px) { .community-times { grid-template-columns: 1fr; } }
+
 .dashboard-panel {
   padding: clamp(26px, 3vw, 43px);
   border: 1px solid rgba(232,182,64,.16);
@@ -3601,6 +3632,10 @@ footer {
 
   .hero-actions .text-link {
     display: none;
+  }
+
+  .hero-primary-actions {
+    width: 100%;
   }
 
   .hero-actions .button {

@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { orderingAppCheckHeaders } from "../lib/ordering-app-check";
 import { cartLineKey, formatPrice, type CartLine, type SquareMenuData, type SquareMenuItem } from "../lib/order-types";
+import { DEFAULT_DELIVERY_SETTINGS, validateDeliverySettings, deliveryWindowLabel, isCommunityDeliveryWindow } from "../functions/community-delivery.mjs";
+import { COMMUNITY_TERMS, COMMUNITY_TERMS_VERSION } from "../functions/community-progress.mjs";
+import { CommunityProgress } from "./CommunityProgress";
 
 const CART_KEY = "deccan-flame-cart-v1";
 const CHECKOUT_KEY = "deccan-flame-checkout-v1";
@@ -36,6 +39,11 @@ export function SquareMenu({ children }: { children: ReactNode }) {
   const [checkoutError, setCheckoutError] = useState("");
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutStarted, setCheckoutStarted] = useState(false);
+  const [orderType, setOrderType] = useState("pickup");
+  const [community, setCommunity] = useState("");
+  const [communityWindow, setCommunityWindow] = useState(false);
+  const serverClock = useRef<{ timestamp: number; receivedAt: number; settings: ReturnType<typeof validateDeliverySettings> } | null>(null);
+  const deliverySettings = menu?.deliverySettings || DEFAULT_DELIVERY_SETTINGS;
   const dialog = useRef<HTMLDivElement>(null);
   const checkoutKey = useRef("");
   const checkoutLock = useRef(false);
@@ -50,6 +58,11 @@ export function SquareMenu({ children }: { children: ReactNode }) {
       const data = await response.json() as SquareMenuData & { error?: string };
       if (!response.ok) throw new Error(data.error || "The menu couldn't be loaded.");
       if (!Array.isArray(data.items) || typeof data.currency !== "string") throw new Error("The menu couldn't be loaded. Please call us to order.");
+      const timestamp = Date.parse(data.serverTime || "");
+      const settings = validateDeliverySettings(data.deliverySettings || DEFAULT_DELIVERY_SETTINGS);
+      serverClock.current = { timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(), receivedAt: performance.now(), settings };
+      setCommunityWindow(isCommunityDeliveryWindow(new Date(serverClock.current.timestamp), settings));
+      setCommunity(current => settings.communities.includes(current) ? current : settings.communities[0] || "");
       setMenu(data);
     } catch (error) {
       if (signal?.aborted) return;
@@ -71,6 +84,17 @@ export function SquareMenu({ children }: { children: ReactNode }) {
     }
     void initialize();
     return () => controller.abort();
+  }, [load]);
+
+  useEffect(() => {
+    const updateWindow = () => {
+      const clock = serverClock.current;
+      if (clock) setCommunityWindow(isCommunityDeliveryWindow(new Date(clock.timestamp + performance.now() - clock.receivedAt), clock.settings));
+    };
+    const refreshOnReturn = () => { if (document.visibilityState === "visible") void load(); };
+    const timer = window.setInterval(updateWindow, 1000);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshOnReturn); };
   }, [load]);
 
   function updateCart(next: CartLine[]) { setCart(next); saveCart(next); setCheckoutError(""); }
@@ -137,6 +161,7 @@ export function SquareMenu({ children }: { children: ReactNode }) {
         signal: AbortSignal.timeout(60000),
         body: JSON.stringify({
           idempotencyKey: checkoutKey.current, items: cart,
+          orderType, ...(orderType === "delivery" && communityWindow ? { community, communityTermsAccepted: data.get("communityTerms") === "on" ? COMMUNITY_TERMS_VERSION : null } : {}),
           customer: { name: data.get("name"), email: data.get("email"), phone: data.get("phone") }, note: data.get("note"),
         }),
       });
@@ -163,12 +188,13 @@ export function SquareMenu({ children }: { children: ReactNode }) {
       <div className="ordering-status" role="status">
         {loading ? <p>Getting the latest menu…</p> : loadError ? <p>{loadError} <button type="button" onClick={() => void load()}>Try again</button> · <a href="tel:+14805771274">Call 480-577-1274</a></p> : menu && <>
           {menu.sandbox && <span className="ordering-test-badge">Test mode · no real orders</span>}
-          <p>{menu.acceptingOrders ? `Pickup · approximately ${menu.pickupMinutes} minutes` : menu.message}</p>
+          <p>{menu.acceptingOrders ? `Preparation · approximately ${menu.pickupMinutes} minutes` : menu.message}</p>
           <small>{menu.location.address}</small>
         </>}
       </div>
       <p className="sr-only" aria-live="polite">{announcement}</p>
       {!menu ? children : <>
+        {deliverySettings.communities.length > 0 && <CommunityProgress enabled={Boolean(menu.communityProgressEnabled)} community={community} onCommunityChange={setCommunity} />}
         <div className="ordering-toolbar">
           <label className="menu-search"><span className="sr-only">Search menu</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg><input type="search" placeholder="Find your favourite…" value={search} onChange={event => setSearch(event.target.value)} /></label>
           <div className="ordering-categories" aria-label="Filter menu categories">
@@ -200,7 +226,6 @@ export function SquareMenu({ children }: { children: ReactNode }) {
           </div>
           <aside className="order-cart" id="your-order" aria-label="Your order">
             <div className="order-cart-title"><h2>Your order</h2><span>{count}</span></div>
-            <p className="order-cart-pickup">Pickup at Deccan Flame</p>
             {checkoutStarted && <div className="order-notice"><p>Already paid? Your Square receipt confirms your order. Check it before placing another.</p><button type="button" onClick={startNewOrder}>Start a new order</button></div>}
             {!cart.length ? <div className="order-empty-cart"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 15h28l-3 25H13L10 15Z" /><path d="M17 18v-7a7 7 0 0 1 14 0v7" /></svg><h3>A little empty. A lot of possibility.</h3><p>Add something delicious to get started.</p></div> : <>
               <ul className="order-cart-lines">{resolved.map((row, index) => <li key={cartLineKey(row.line)}>
@@ -213,7 +238,18 @@ export function SquareMenu({ children }: { children: ReactNode }) {
               <div className="order-subtotal"><span>Subtotal</span><strong>{formatPrice(subtotal, menu.currency)}</strong></div>
               <p className="order-tax-note">Taxes, applicable discounts and optional tip are finalized on Square.</p>
               <form className="order-details" onSubmit={checkout}>
-                <fieldset disabled={checkingOut}><legend>Who’s picking up?</legend>
+                <fieldset disabled={checkingOut} aria-label="Order details">
+                  <label>Order type<select name="orderType" value={orderType} onChange={event => { setOrderType(event.target.value); setCheckoutError(""); }}>
+                    <option value="pickup">Pickup</option><option value="delivery">Delivery</option>
+                  </select></label>
+                  {orderType === "delivery" && <p className="order-tax-note">Delivery is arranged by our team. Square may label this order as pickup.</p>}
+                  {orderType === "delivery" && communityWindow && <>
+                    <label>Community<select name="community" value={community} onChange={event => setCommunity(event.target.value)} required>
+                      {deliverySettings.communities.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select></label>
+                    <p className="order-tax-note">Community orders placed {deliveryWindowLabel(deliverySettings)} include your community in the order name.</p>
+                    <label className="community-terms" key={`${community}-${deliverySettings.startTime}-${deliverySettings.endTime}`}><input type="checkbox" name="communityTerms" required /><span>{COMMUNITY_TERMS} I agree to this policy.</span></label>
+                  </>}
                   <label>Name<input name="name" autoComplete="name" required minLength={2} maxLength={100} placeholder="Your name" /></label>
                   <label>Phone<input name="phone" type="tel" autoComplete="tel" required minLength={10} maxLength={24} placeholder="(480) 555-0123" /></label>
                   <label>Email<input name="email" type="email" autoComplete="email" required maxLength={254} placeholder="you@example.com" /></label>
@@ -221,7 +257,7 @@ export function SquareMenu({ children }: { children: ReactNode }) {
                 </fieldset>
                 <p className="order-tax-note">For allergies, please call us before ordering.</p>
                 {checkoutError && <p className="order-error" role="alert">{checkoutError}</p>}
-                <button className="order-checkout" type="submit" disabled={!canCheckout || checkingOut}>{checkingOut ? "Opening Square…" : <>Continue to Square <span aria-hidden="true">↗</span></>}</button>
+                <button className="order-checkout" type="submit" disabled={!canCheckout || checkingOut}>{checkingOut ? "Opening Square…" : "Place Order"}</button>
                 <p className="order-payment-note">Secure payment on Square. Your order is placed after payment.</p>
               </form>
             </>}
