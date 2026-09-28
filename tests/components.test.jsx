@@ -15,7 +15,8 @@ vi.mock("firebase/firestore", () => ({
   setDoc: vi.fn().mockResolvedValue(undefined),
   updateDoc: vi.fn().mockResolvedValue(undefined),
   deleteDoc: vi.fn().mockResolvedValue(undefined),
-  getDoc: vi.fn().mockResolvedValue({ data: () => ({ acceptingVotes: true }) }),
+  getDoc: vi.fn().mockImplementation(ref => Promise.resolve({ data: () => ref.path === "orderingSettings/communityDelivery" ? undefined : { acceptingVotes: true } })),
+  runTransaction: vi.fn(),
   getDocs: vi.fn().mockResolvedValue({ docs: [] }),
   addDoc: vi.fn().mockResolvedValue({ id: "new" }),
   onSnapshot: (ref, success, error) => {
@@ -232,7 +233,7 @@ describe("admin dashboard", () => {
     state.auth.user = { uid: "admin" }; state.auth.profile = { role: "admin", displayName: "Owner" };
     render(<DashboardPage />);
     act(() => state.listeners[0].error(new Error("permission denied")));
-    expect(screen.getByRole("status").textContent).toContain("could not be loaded");
+    expect(screen.getByText(/Dashboard data could not be loaded/).closest('[role="status"]')).toBeTruthy();
   });
   it("closes voting before deleting votes and restores the previous state", async () => {
     state.auth.user = { uid: "admin" }; state.auth.profile = { role: "admin", displayName: "Owner" };
@@ -260,6 +261,15 @@ describe("large vote deletion", () => {
 });
 
 describe("navigation", () => {
+  it("links directly to the full menu below the hero explore button", () => {
+    render(<Home />);
+    const explore = screen.getByRole("link", { name: "Explore the menu", exact: true });
+    const order = screen.getByRole("link", { name: "Place Order", exact: true });
+    expect(order.getAttribute("href")).toBe("/menu");
+    expect(explore.nextElementSibling).toBe(order);
+    expect(order.parentElement.className).toBe("hero-primary-actions");
+  });
+
   it("opens the menu, closes with Escape, and restores the trigger focus", async () => {
     render(<Home />);
     await userEvent.click(screen.getByRole("button", { name: "Open menu" }));

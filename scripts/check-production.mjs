@@ -8,6 +8,8 @@ const failures = [];
 if (backend.SQUARE_ENVIRONMENT !== "production") failures.push("Set the Firebase backend environment to production (leave .dev.vars in Sandbox).");
 if (!backend.SQUARE_LOCATION_ID) failures.push("Add the Production location ID to functions/.env.deccanflame-website.");
 if (backend.SQUARE_ACCESS_TOKEN) failures.push("Remove the access token from the Functions env file; use Firebase Secret Manager.");
+if (backend.SQUARE_WEBHOOK_SIGNATURE_KEY) failures.push("Remove the webhook signature key from the Functions env file; use Firebase Secret Manager.");
+if (backend.COMMUNITY_PROGRESS_ENABLED === "true" && !backend.SQUARE_WEBHOOK_NOTIFICATION_URL?.startsWith("https://")) failures.push("Community delivery requires the exact HTTPS Square webhook notification URL.");
 if (!backend.ORDERING_APP_ID || backend.ORDERING_APP_ID !== frontend.NEXT_PUBLIC_FIREBASE_APP_ID) failures.push("ORDERING_APP_ID must match the frontend Firebase app ID.");
 if (!frontend.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY) failures.push("Configure the public reCAPTCHA Enterprise site key for Firebase App Check.");
 const origins = (backend.ORDERING_ALLOWED_ORIGINS || "").split(",").map(value => value.trim());

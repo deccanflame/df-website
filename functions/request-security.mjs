@@ -1,7 +1,7 @@
 // Firebase-specific security boundary, separate from the local Sandbox worker.
 export async function checkOrderingRequest(req, config, verifyToken) {
   const path = req.path.replace(/\/$/, "");
-  if (!["/api/square/menu", "/api/square/checkout"].includes(path)) return { status: 404, error: "Not found" };
+  if (!["/api/square/menu", "/api/square/checkout", "/api/square/community-progress"].includes(path)) return { status: 404, error: "Not found" };
   const checkout = path.endsWith("/checkout");
   if (req.method !== (checkout ? "POST" : "GET")) return { status: 405, error: "Method not allowed" };
   if ((req.rawBody?.length || 0) > 16000) return { status: 413, error: "Your cart is too large." };

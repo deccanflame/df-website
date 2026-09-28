@@ -17,8 +17,8 @@
     "build:production": "PRODUCTION_ORDERING_BUILD=true STATIC_EXPORT=true next build --webpack",
     "check:production": "node scripts/check-production.mjs",
     "test:unit": "vitest run",
-    "test:ordering": "node --test tests/square.test.mjs tests/request-security.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore,auth --project demo-deccan-flame --config firebase.test.json \"node --test --test-concurrency=1 tests/firestore-rules.test.mjs tests/firebase-auth.test.mjs\"",
+    "test:ordering": "node --test tests/square.test.mjs tests/request-security.test.mjs tests/community-progress.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore,auth --project demo-deccan-flame --config firebase.test.json \"node --test --test-concurrency=1 tests/firestore-rules.test.mjs tests/firebase-auth.test.mjs tests/community-store.test.mjs\"",
     "test:static": "npm run build:static && node --test tests/static-export.test.mjs",
     "test:all": "npm run lint && npm run typecheck && npm test && npm run test:static && npm run test:rules"
   },
