@@ -1,6 +1,6 @@
 // Shared by Firebase Functions and the local vinext Worker. Never import into a client component.
-import { DEFAULT_DELIVERY_SETTINGS, validateDeliverySettings, deliveryWindowLabel, isCommunityDeliveryWindow } from "./community-delivery.mjs";
-import { communityWindow, communityCampaignId, emptyCampaign, COMMUNITY_TERMS_VERSION, COMMUNITY_TERMS } from "./community-progress.mjs";
+import { DEFAULT_DELIVERY_SETTINGS, validateDeliverySettings, isCommunityDeliveryWindow } from "./community-delivery.mjs";
+import { DeliveryError, quoteDelivery, paidDeliveryConfigured, communityDeliverySlot, COMMUNITY_ORDER_START, COMMUNITY_ORDER_END } from "./delivery.mjs";
 const API_VERSION = "2026-09-16";
 const MAX_QUANTITY = 20;
 
@@ -111,21 +111,14 @@ async function loadDeliverySettings(env) {
     const saved = await env.readDeliverySettings?.();
     deliverySettings = validateDeliverySettings(saved === undefined ? DEFAULT_DELIVERY_SETTINGS : saved);
   } catch { throw new OrderingError(503, "Delivery settings are unavailable. Please try again or call us to order."); }
-  return deliverySettings;
+  // Old saved settings described a conditional campaign. The new fixed hours
+  // are authoritative even before an admin next saves the community list.
+  return { ...deliverySettings, startTime: COMMUNITY_ORDER_START, endTime: COMMUNITY_ORDER_END };
 }
 
-const progressEnabled = env => typeof env.readCommunityCampaigns === "function" && typeof env.recordCommunityCheckout === "function";
-
-export async function loadCommunityProgress(env, now = new Date()) {
-  const cfg = config(env);
-  if (!progressEnabled(env)) return { enabled: false, serverTime: now.toISOString(), campaigns: [] };
-  const settings = await loadDeliverySettings(env);
-  const window = communityWindow(settings, now);
-  const defaults = await Promise.all(settings.communities.map(async community => emptyCampaign(await communityCampaignId(cfg.environment, cfg.locationId, community, window), community, window, cfg.environment)));
-  const saved = await env.readCommunityCampaigns(defaults);
-  // Never expose ledger data, payment IDs or arbitrary database fields publicly.
-  const campaigns = defaults.map((base, i) => ({ ...base, paidOrders: saved[i].paidOrders, foodSubtotal: saved[i].foodSubtotal, qualifiedAt: saved[i].qualifiedAt, updatedAt: saved[i].updatedAt }));
-  return { enabled: true, serverTime: now.toISOString(), campaigns };
+export async function loadCommunityProgress(_env, now = new Date()) {
+  // Compatibility for old tabs. New orders never join a minimum-goal campaign.
+  return { enabled: false, serverTime: now.toISOString(), campaigns: [], message: "Community delivery no longer has a minimum. Reload the menu for current ordering hours." };
 }
 
 export async function loadMenu(env, fetcher = fetch, now = new Date()) {
@@ -192,7 +185,11 @@ export async function loadMenu(env, fetcher = fetch, now = new Date()) {
   const open = isLocationOpen(location, now);
   const validPrep = Number.isInteger(cfg.prepMinutes) && cfg.prepMinutes >= 5 && cfg.prepMinutes <= 180;
   return {
-    items, currency: location.currency, sandbox: cfg.environment === "sandbox", serverTime: now.toISOString(), deliverySettings, communityProgressEnabled: progressEnabled(env),
+    items, currency: location.currency, sandbox: cfg.environment === "sandbox", serverTime: now.toISOString(), deliverySettings, communityProgressEnabled: false,
+    paidDeliveryAvailable: paidDeliveryConfigured(env),
+    communityAcceptingOrders: cfg.enabled && validPrep && isCommunityDeliveryWindow(now, deliverySettings),
+    communityOrderingEnabled: cfg.enabled && validPrep && deliverySettings.communities.length > 0,
+    communityDelivery: communityDeliverySlot(now),
     acceptingOrders: cfg.enabled && open && validPrep,
     message: !cfg.enabled || !validPrep ? "Online orders are currently paused. Please call us to order." : !open ? "Online ordering is currently closed. Please call us for opening hours." : "",
     pickupMinutes: cfg.prepMinutes, location: {
@@ -219,21 +216,20 @@ export async function createCheckout(env, body, fetcher = fetch, now = new Date(
   if (body.note != null && (typeof body.note !== "string" || body.note.length > 400)) bad("Please keep order notes under 400 characters.");
   // Older clients omitted this field and always created pickup orders.
   const orderType = body.orderType === undefined ? "pickup" : body.orderType;
-  if (!["pickup", "delivery"].includes(orderType)) bad("Please choose pickup or delivery.");
+  if (!["pickup", "delivery", "community_delivery"].includes(orderType)) bad("Please choose Community Delivery, Delivery or Pickup.");
   const menu = await loadMenu(env, fetcher, now); // Never trust prices, availability or options sent by the browser.
-  if (!menu.acceptingOrders) throw new OrderingError(409, menu.message);
-  const communityOrder = orderType === "delivery" && isCommunityDeliveryWindow(now, menu.deliverySettings);
-  if (communityOrder && !body.community) throw new OrderingError(409, `Please select your community for delivery during ${deliveryWindowLabel(menu.deliverySettings)}.`);
+  const communityOrder = orderType === "community_delivery";
+  if (communityOrder ? !menu.communityAcceptingOrders : !menu.acceptingOrders) throw new OrderingError(409, communityOrder ? "Community Delivery orders are accepted from 2–6:30 p.m. Phoenix time for free delivery that evening from 7–8 p.m." : menu.message);
+  if (communityOrder && !body.community) throw new OrderingError(409, "Please select your community for free delivery.");
   if (communityOrder && !menu.deliverySettings.communities.includes(body.community)) throw new OrderingError(409, "Please select an available delivery community. The community list may have changed.");
   const community = communityOrder ? body.community : null;
-  if (orderType === "delivery" && !communityOrder && (progressEnabled(env) || body.communityTermsAccepted)) throw new OrderingError(409, "Community delivery is outside its ordering window. Please choose pickup or return during the next window.");
-  let campaign;
-  if (communityOrder) {
-    if (!progressEnabled(env)) throw new OrderingError(503, "Community delivery tracking is not connected yet. Please choose pickup or call us.");
-    if (body.communityTermsAccepted !== COMMUNITY_TERMS_VERSION) bad("Please accept the community delivery minimum and pickup-or-refund policy.");
-    if (menu.currency !== "USD") throw new OrderingError(503, "Community delivery is unavailable for this currency.");
-    const window = communityWindow(menu.deliverySettings, now);
-    campaign = emptyCampaign(await communityCampaignId(cfg.environment, cfg.locationId, community, window), community, window, cfg.environment);
+  let deliveryQuote;
+  if (orderType === "delivery") {
+    if (body.communityTermsAccepted) throw new OrderingError(409, "Delivery options have changed. Reload the menu and choose your order type again.");
+    if (!Number.isSafeInteger(body.deliveryFee) || body.deliveryFee < 0) bad("Calculate and review your delivery fee before placing the order.");
+    deliveryQuote = await quoteDelivery(env, body.deliveryAddress, menu.location.address, fetcher);
+    if (body.deliveryFee !== deliveryQuote.fee) throw new OrderingError(409, "Your delivery quote changed. Calculate and review the updated fee before continuing.");
+    if (menu.currency !== "USD") throw new OrderingError(503, "Address-based delivery currently requires USD pricing.");
   }
   const quantities = new Map();
   const lineItems = body.items.map(line => {
@@ -257,24 +253,26 @@ export async function createCheckout(env, body, fetcher = fetch, now = new Date(
       ...(modifierIds.length ? { modifiers: [...modifierIds].sort().map(id => ({ catalog_object_id: id })) } : {}),
     };
   });
-  const recipient = { display_name: `${customer.name.trim()}${community ? ` - ${community}` : ""}`, phone_number: phone, email_address: customer.email.trim() };
+  const recipient = { display_name: `${customer.name.trim()}${community ? ` - ${community}` : ""}`, phone_number: phone, email_address: customer.email.trim(), ...(deliveryQuote ? { address: deliveryQuote.address } : {}) };
   const deliveryTag = `Website delivery order${community ? ` - ${community}` : ""}`;
+  const staffTag = communityOrder ? `Free community delivery 7–8pm Phoenix ${menu.communityDelivery.deliveryDate}` : deliveryTag;
   const order = {
     location_id: cfg.locationId, line_items: lineItems,
     pricing_options: { auto_apply_taxes: true, auto_apply_discounts: true },
+    ...(deliveryQuote ? { service_charges: [{ name: `Delivery (${deliveryQuote.miles.toFixed(2)} mi at $1/mi)`, amount_money: { amount: deliveryQuote.fee, currency: "USD" }, calculation_phase: "SUBTOTAL_PHASE", taxable: true }] } : {}),
     // Restaurant-managed delivery is intentionally a staff tag, not Square courier dispatch.
     // Keep the hosted pickup checkout, as agreed with the restaurant.
     fulfillments: [{ type: "PICKUP", state: "PROPOSED", pickup_details: {
-      recipient, schedule_type: "ASAP", prep_time_duration: `PT${cfg.prepMinutes}M`,
-      note: orderType === "delivery" ? [deliveryTag, body.note?.trim()].filter(Boolean).join("\n") : body.note?.trim() || "Website pickup order",
+      recipient, ...(communityOrder ? { schedule_type: "SCHEDULED", pickup_at: menu.communityDelivery.startAt, pickup_window_duration: "PT1H" } : { schedule_type: "ASAP" }), prep_time_duration: `PT${cfg.prepMinutes}M`,
+      note: orderType !== "pickup" ? [staffTag, body.note?.trim()].filter(Boolean).join("\n") : body.note?.trim() || "Website pickup order",
     } }],
   };
   // The same cart retry receives the same Square link, even across backend instances.
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ key: body.idempotencyKey, order, ...(campaign ? { campaignId: campaign.id } : {}) })));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ key: body.idempotencyKey, order })));
   const key = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
   const result = await squareApi(cfg, "/online-checkout/payment-links", {
     idempotency_key: key, order,
-    ...(campaign ? { payment_note: COMMUNITY_TERMS } : {}),
+    ...(communityOrder ? { payment_note: `Free community delivery to ${community}, 7–8 p.m. Phoenix time on ${menu.communityDelivery.deliveryDate}. No order minimum.` } : {}),
     checkout_options: { allow_tipping: true, merchant_support_email: "deccanflame1@gmail.com" },
     // Pickup contact details already live in fulfillment.pickup_details.recipient.
     // Square rejects pre_populated_data when an explicit fulfillment is supplied.
@@ -288,10 +286,6 @@ export async function createCheckout(env, body, fetcher = fetch, now = new Date(
   if (url.protocol !== "https:" || url.username || url.password || !checkoutHosts.includes(url.hostname)) {
     throw new OrderingError(502, "Square didn't return a valid checkout link.");
   }
-  if (campaign) {
-    try { await env.recordCommunityCheckout(result.payment_link?.order_id, campaign, now.toISOString()); }
-    catch { throw new OrderingError(503, "We couldn't register your community order. No payment was taken. Please try again."); }
-  }
   return { url: url.href };
 }
 
@@ -302,7 +296,7 @@ export async function handleOrderingRequest(request, env, fetcher = fetch) {
   try {
     if (path === "/api/square/menu" && request.method === "GET") return json(await loadMenu(env, fetcher));
     if (path === "/api/square/community-progress" && request.method === "GET") return json(await loadCommunityProgress(env));
-    if (path === "/api/square/checkout" && request.method === "POST") {
+    if (["/api/square/checkout", "/api/square/delivery-quote"].includes(path) && request.method === "POST") {
       const origin = request.headers.get("origin");
       const allowed = (env.ORDERING_ALLOWED_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean);
       if (!origin || !allowed.includes(origin)) throw new OrderingError(403, "Please order directly from the restaurant website.");
@@ -311,10 +305,17 @@ export async function handleOrderingRequest(request, env, fetcher = fetch) {
       if (text.length > 16000) throw new OrderingError(413, "Your cart is too large. Please call for a catering order.");
       let body;
       try { body = JSON.parse(text); } catch { bad("Please send a valid order."); }
+      if (path.endsWith("/delivery-quote")) {
+        const menu = await loadMenu(env, fetcher);
+        if (!menu.acceptingOrders) throw new OrderingError(409, menu.message);
+        if (menu.currency !== "USD") throw new OrderingError(503, "Address-based delivery currently requires USD pricing.");
+        return json(await quoteDelivery(env, body?.address, menu.location.address, fetcher));
+      }
       return json(await createCheckout(env, body, fetcher));
     }
     return json({ error: "Not found" }, 404);
   } catch (error) {
-    return json({ error: error instanceof OrderingError ? error.message : "Online ordering is temporarily unavailable. Please try again." }, error instanceof OrderingError ? error.status : 500);
+    const known = error instanceof OrderingError || error instanceof DeliveryError;
+    return json({ error: known ? error.message : "Online ordering is temporarily unavailable. Please try again." }, known ? error.status : 500);
   }
 }

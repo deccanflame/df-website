@@ -1,6 +1,7 @@
 # Local vinext server only. Copy to .dev.vars (ignored by Git).
 # Use a Square SANDBOX token and matching sandbox location first.
 SQUARE_ACCESS_TOKEN=
+GOOGLE_MAPS_API_KEY=
 SQUARE_LOCATION_ID=
 SQUARE_ENVIRONMENT=sandbox
 SQUARE_ORDERING_ENABLED=false
@@ -10,7 +11,6 @@ ORDERING_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 # Normally inherited from NEXT_PUBLIC_FIREBASE_PROJECT_ID in .env.local.
 # Override only to intentionally read delivery settings from another project.
 # ORDERING_FIREBASE_PROJECT_ID=deccanflame-website
-# The local Worker does not write payment aggregates: community delivery is
-# unavailable here until using the Firebase backend. Pickup testing still works.
-# Verify community tracking using the demo emulator tests and a separate Sandbox
-# Firebase deployment with a signed Square webhook (see SQUARE_SETUP.md).
+# Community Delivery is free, with checkout creation from 2–6:30 p.m. Phoenix.
+# GOOGLE_MAPS_API_KEY must be server-only and restricted to Google Routes API.
+# Without it, paid address-based delivery is unavailable; other options still work.

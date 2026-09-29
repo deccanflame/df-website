@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { orderingAppCheckHeaders } from "../lib/ordering-app-check";
-import { cartLineKey, formatPrice, type CartLine, type SquareMenuData, type SquareMenuItem } from "../lib/order-types";
-import { DEFAULT_DELIVERY_SETTINGS, validateDeliverySettings, deliveryWindowLabel, isCommunityDeliveryWindow } from "../functions/community-delivery.mjs";
-import { COMMUNITY_TERMS, COMMUNITY_TERMS_VERSION } from "../functions/community-progress.mjs";
+import { cartLineKey, formatPrice, type CartLine, type SquareMenuData, type SquareMenuItem, type DeliveryAddress, type DeliveryQuote } from "../lib/order-types";
+import { DEFAULT_DELIVERY_SETTINGS, validateDeliverySettings, isCommunityDeliveryWindow } from "../functions/community-delivery.mjs";
+import { COMMUNITY_ORDER_START, COMMUNITY_ORDER_END } from "../functions/delivery.mjs";
 import { CommunityProgress } from "./CommunityProgress";
 
 const CART_KEY = "deccan-flame-cart-v1";
@@ -42,6 +42,11 @@ export function SquareMenu({ children }: { children: ReactNode }) {
   const [orderType, setOrderType] = useState("pickup");
   const [community, setCommunity] = useState("");
   const [communityWindow, setCommunityWindow] = useState(false);
+  const [address, setAddress] = useState<DeliveryAddress>({ address_line_1: "", address_line_2: "", locality: "", administrative_district_level_1: "AZ", postal_code: "" });
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  const [quoting, setQuoting] = useState(false);
+  const quoteSequence = useRef(0);
   const serverClock = useRef<{ timestamp: number; receivedAt: number; settings: ReturnType<typeof validateDeliverySettings> } | null>(null);
   const deliverySettings = menu?.deliverySettings || DEFAULT_DELIVERY_SETTINGS;
   const dialog = useRef<HTMLDivElement>(null);
@@ -59,7 +64,7 @@ export function SquareMenu({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error(data.error || "The menu couldn't be loaded.");
       if (!Array.isArray(data.items) || typeof data.currency !== "string") throw new Error("The menu couldn't be loaded. Please call us to order.");
       const timestamp = Date.parse(data.serverTime || "");
-      const settings = validateDeliverySettings(data.deliverySettings || DEFAULT_DELIVERY_SETTINGS);
+      const settings = validateDeliverySettings({ ...(data.deliverySettings || DEFAULT_DELIVERY_SETTINGS), startTime: COMMUNITY_ORDER_START, endTime: COMMUNITY_ORDER_END });
       serverClock.current = { timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(), receivedAt: performance.now(), settings };
       setCommunityWindow(isCommunityDeliveryWindow(new Date(serverClock.current.timestamp), settings));
       setCommunity(current => settings.communities.includes(current) ? current : settings.communities[0] || "");
@@ -113,7 +118,10 @@ export function SquareMenu({ children }: { children: ReactNode }) {
   });
   const subtotal = resolved.reduce((sum, row) => sum + row.price * row.line.quantity, 0);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
-  const canCheckout = Boolean(menu?.acceptingOrders && cart.length && !resolved.some(row => row.invalid) && !loading && !loadError);
+  const canCommunityOrder = Boolean(menu?.communityOrderingEnabled && communityWindow);
+  const canBrowseOrder = Boolean(menu?.acceptingOrders || canCommunityOrder);
+  const orderAvailable = orderType === "community_delivery" ? canCommunityOrder : orderType === "delivery" ? menu?.acceptingOrders && menu?.paidDeliveryAvailable && deliveryQuote : menu?.acceptingOrders;
+  const canCheckout = Boolean(orderAvailable && cart.length && !resolved.some(row => row.invalid) && !loading && !loadError && !quoting);
   const categories = menu ? Array.from(new Map(menu.items.map(item => [item.categoryId, item.category])).entries()) : [];
   const visibleItems = menu?.items.filter(item => (category === "all" || item.categoryId === category) &&
     `${item.name} ${item.description} ${item.category}`.toLowerCase().includes(search.toLowerCase().trim())) || [];
@@ -161,13 +169,14 @@ export function SquareMenu({ children }: { children: ReactNode }) {
         signal: AbortSignal.timeout(60000),
         body: JSON.stringify({
           idempotencyKey: checkoutKey.current, items: cart,
-          orderType, ...(orderType === "delivery" && communityWindow ? { community, communityTermsAccepted: data.get("communityTerms") === "on" ? COMMUNITY_TERMS_VERSION : null } : {}),
+          orderType, ...(orderType === "community_delivery" ? { community } : {}),
+          ...(orderType === "delivery" ? { deliveryAddress: address, deliveryFee: deliveryQuote?.fee } : {}),
           customer: { name: data.get("name"), email: data.get("email"), phone: data.get("phone") }, note: data.get("note"),
         }),
       });
       if (!response.headers.get("content-type")?.includes("application/json")) throw new Error("Checkout is unavailable. Please call us to order.");
       const result = await response.json() as { url: string; error?: string };
-      if (!response.ok) { if (response.status === 409) void load(); throw new Error(result.error || "Checkout couldn't be started. Please try again."); }
+      if (!response.ok) { if (response.status === 409) { if (orderType === "delivery") setDeliveryQuote(null); void load(); } throw new Error(result.error || "Checkout couldn't be started. Please try again."); }
       const url = new URL(result.url);
       if (url.protocol !== "https:" || !["square.link", "sandbox.square.link", "checkout.square.site", "sandbox.checkout.square.site"].includes(url.hostname)) throw new Error("Checkout couldn't be started. Please try again.");
       try { sessionStorage.setItem(`${CHECKOUT_KEY}-started`, "true"); } catch { /* Optional local state. */ }
@@ -183,18 +192,47 @@ export function SquareMenu({ children }: { children: ReactNode }) {
     try { sessionStorage.setItem(CHECKOUT_KEY, checkoutKey.current); sessionStorage.removeItem(`${CHECKOUT_KEY}-started`); } catch { /* Optional local state. */ }
   }
 
+  function changeAddress(key: keyof DeliveryAddress, value: string) {
+    quoteSequence.current++; setQuoting(false); setDeliveryQuote(null); setQuoteError(""); setCheckoutError("");
+    setAddress(current => ({ ...current, [key]: value }));
+  }
+
+  async function calculateDelivery() {
+    if (quoting || checkingOut) return;
+    const sequence = ++quoteSequence.current;
+    setQuoting(true); setQuoteError(""); setDeliveryQuote(null);
+    try {
+      const response = await fetch("/api/square/delivery-quote/", { method: "POST", headers: { "Content-Type": "application/json", ...await orderingAppCheckHeaders() }, body: JSON.stringify({ address }), signal: AbortSignal.timeout(60000) });
+      const result = await response.json() as DeliveryQuote & { error?: string };
+      if (!response.ok) throw new Error(result.error || "Delivery could not be calculated.");
+      if (!Number.isSafeInteger(result.fee) || result.fee < 0 || typeof result.miles !== "number" || !Number.isFinite(result.miles) || result.currency !== "USD") throw new Error("Delivery could not be calculated. Please try again.");
+      if (sequence === quoteSequence.current) setDeliveryQuote(result);
+    } catch (error) { if (sequence === quoteSequence.current) setQuoteError(error instanceof Error ? error.message : "Delivery could not be calculated."); }
+    finally { if (sequence === quoteSequence.current) setQuoting(false); }
+  }
+
   return (
     <>
       <div className="ordering-status" role="status">
         {loading ? <p>Getting the latest menu…</p> : loadError ? <p>{loadError} <button type="button" onClick={() => void load()}>Try again</button> · <a href="tel:+14805771274">Call 480-577-1274</a></p> : menu && <>
           {menu.sandbox && <span className="ordering-test-badge">Test mode · no real orders</span>}
-          <p>{menu.acceptingOrders ? `Preparation · approximately ${menu.pickupMinutes} minutes` : menu.message}</p>
-          <small>{menu.location.address}</small>
+          <p>{menu.acceptingOrders ? `Pickup preparation · approximately ${menu.pickupMinutes} minutes` : canCommunityOrder ? "Pickup and paid delivery are closed. Community Delivery orders are open for this evening." : menu.message}</p>
+          <small>{menu.sandbox ? "Square Sandbox · test catalog and location, not the live restaurant menu" : menu.location.address}</small>
         </>}
       </div>
       <p className="sr-only" aria-live="polite">{announcement}</p>
       {!menu ? children : <>
-        {deliverySettings.communities.length > 0 && <CommunityProgress enabled={Boolean(menu.communityProgressEnabled)} community={community} onCommunityChange={setCommunity} />}
+        {deliverySettings.communities.length > 0 && <CommunityProgress orderingOpen={canCommunityOrder} />}
+        <section className="ordering-preferences" aria-label="Choose how to receive your order" id="order-preferences">
+          <div className="ordering-preferences-title"><h2>How would you like your order?</h2><p>Choose your service, then find your favourites.</p></div>
+          <label>Order type<select name="orderType" value={orderType} disabled={checkingOut} onChange={event => { quoteSequence.current++; setQuoting(false); setDeliveryQuote(null); setQuoteError(""); setOrderType(event.target.value); setCheckoutError(""); }}>
+            <option value="community_delivery">Community Delivery</option><option value="delivery">Delivery</option><option value="pickup">Pickup</option>
+          </select></label>
+          {orderType === "community_delivery" && <label>Community<select name="community" value={community} disabled={checkingOut} onChange={event => setCommunity(event.target.value)}>
+            {deliverySettings.communities.map(name => <option key={name} value={name}>{name}</option>)}
+          </select></label>}
+          <p className="ordering-service-note" role="status">{orderType === "community_delivery" ? canCommunityOrder ? "Free delivery this evening, 7–8 p.m." : "Community ordering is closed. Order daily from 2–6:30 p.m. Phoenix time." : orderType === "delivery" ? menu.paidDeliveryAvailable ? "$1 per driving mile · enter your address in the cart to calculate your fee." : "Address-based delivery is not connected yet. Please choose another order type or call us." : `Collect from the restaurant · approximately ${menu.pickupMinutes} minutes when ordering is open.`}</p>
+        </section>
         <div className="ordering-toolbar">
           <label className="menu-search"><span className="sr-only">Search menu</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg><input type="search" placeholder="Find your favourite…" value={search} onChange={event => setSearch(event.target.value)} /></label>
           <div className="ordering-categories" aria-label="Filter menu categories">
@@ -204,7 +242,7 @@ export function SquareMenu({ children }: { children: ReactNode }) {
         </div>
         <section className="ordering-layout" id="full-menu-content" aria-label="Menu and order">
           <div className="ordering-dishes">
-            <div className="ordering-section-title"><h2>Made for your cravings.</h2><span>{visibleItems.length} dishes</span></div>
+            <div className="ordering-section-title"><h2>Made for your cravings.</h2><span>{visibleItems.length} {visibleItems.length === 1 ? "dish" : "dishes"}</span></div>
             {!visibleItems.length && <div className="ordering-empty"><h3>{menu.items.length ? "No dishes found" : "The kitchen's menu is on its way"}</h3><p>{menu.items.length ? "Try another search or category." : "Please call us for today's available dishes."}</p></div>}
             <div className="ordering-item-grid">
               {visibleItems.map(item => {
@@ -215,7 +253,7 @@ export function SquareMenu({ children }: { children: ReactNode }) {
                     <span className="ordering-item-category">{item.category}</span><h3>{item.name}</h3>
                     {item.description && <p>{item.description}</p>}
                     <div className="ordering-item-bottom"><strong>{item.variations.length > 1 ? "From " : ""}{formatPrice(Math.min(...item.variations.map(variation => variation.price)), menu.currency)}</strong>
-                      <button type="button" disabled={!available || !menu.acceptingOrders || Boolean(loadError) || loading} onClick={() => chooseItem(item)} aria-label={`Add ${item.name}`}>
+                      <button type="button" disabled={!available || !canBrowseOrder || Boolean(loadError) || loading} onClick={() => chooseItem(item)} aria-label={`Add ${item.name}`}>
                         {available ? <>Add <span aria-hidden="true">＋</span></> : item.customizable ? "Sold out" : "Call to order"}
                       </button>
                     </div>
@@ -236,19 +274,28 @@ export function SquareMenu({ children }: { children: ReactNode }) {
                 <div className="order-line-actions"><div className="order-quantity"><button type="button" aria-label={`Decrease ${row.item?.name || "item"} quantity`} disabled={checkingOut} onClick={() => changeQuantity(index, -1)}>−</button><span>{row.line.quantity}</span><button type="button" aria-label={`Increase ${row.item?.name || "item"} quantity`} disabled={checkingOut || row.invalid || cart.filter(line => line.variationId === row.line.variationId).reduce((sum, line) => sum + line.quantity, 0) >= Math.min(20, row.variation?.stock ?? 20)} onClick={() => changeQuantity(index, 1)}>+</button></div><button className="order-remove" type="button" disabled={checkingOut} onClick={() => updateCart(cart.filter((_, i) => i !== index))}>Remove<span className="sr-only"> {row.item?.name || "item"}</span></button></div>
               </li>)}</ul>
               <div className="order-subtotal"><span>Subtotal</span><strong>{formatPrice(subtotal, menu.currency)}</strong></div>
+              {orderType === "community_delivery" && <div className="order-delivery-total"><span>Community delivery</span><strong>Free</strong></div>}
+              {orderType === "delivery" && <div className="order-delivery-total"><span>Delivery fee</span><strong>{deliveryQuote ? formatPrice(deliveryQuote.fee, menu.currency) : "Calculate below"}</strong></div>}
+              {orderType === "delivery" && deliveryQuote && <div className="order-delivery-total"><span>Estimated total before tax</span><strong>{formatPrice(subtotal + deliveryQuote.fee, menu.currency)}</strong></div>}
               <p className="order-tax-note">Taxes, applicable discounts and optional tip are finalized on Square.</p>
               <form className="order-details" onSubmit={checkout}>
                 <fieldset disabled={checkingOut} aria-label="Order details">
-                  <label>Order type<select name="orderType" value={orderType} onChange={event => { setOrderType(event.target.value); setCheckoutError(""); }}>
-                    <option value="pickup">Pickup</option><option value="delivery">Delivery</option>
-                  </select></label>
-                  {orderType === "delivery" && <p className="order-tax-note">Delivery is arranged by our team. Square may label this order as pickup.</p>}
-                  {orderType === "delivery" && communityWindow && <>
-                    <label>Community<select name="community" value={community} onChange={event => setCommunity(event.target.value)} required>
-                      {deliverySettings.communities.map(name => <option key={name} value={name}>{name}</option>)}
-                    </select></label>
-                    <p className="order-tax-note">Community orders placed {deliveryWindowLabel(deliverySettings)} include your community in the order name.</p>
-                    <label className="community-terms" key={`${community}-${deliverySettings.startTime}-${deliverySettings.endTime}`}><input type="checkbox" name="communityTerms" required /><span>{COMMUNITY_TERMS} I agree to this policy.</span></label>
+                  <div className="order-service-summary"><span>{orderType === "community_delivery" ? `Community Delivery · ${community}` : orderType === "delivery" ? "Delivery" : "Pickup"}</span><a href="#order-preferences">Change</a></div>
+                  {orderType !== "pickup" && <p className="order-tax-note">Delivery is arranged by our team.</p>}
+                  {orderType === "community_delivery" && <>
+                    <p className="order-tax-note">Free delivery, no minimum. Order 2–6:30 p.m. for delivery that evening from 7–8 p.m. Phoenix time.</p>
+                    {!orderAvailable && <p className="order-error" role="status">Community Delivery ordering is closed. Please return between 2 and 6:30 p.m.</p>}
+                  </>}
+                  {orderType === "delivery" && <>
+                    <p className="order-tax-note">$1 per driving mile from the restaurant. No maximum radius. The delivery fee is rounded to the nearest cent.</p>
+                    <label>Street address<input autoComplete="address-line1" value={address.address_line_1} onChange={event => changeAddress("address_line_1", event.target.value)} required minLength={5} maxLength={120} placeholder="123 Main Street" /></label>
+                    <label>Apartment or unit <span>(optional)</span><input autoComplete="address-line2" value={address.address_line_2} onChange={event => changeAddress("address_line_2", event.target.value)} maxLength={40} /></label>
+                    <label>City<input autoComplete="address-level2" value={address.locality} onChange={event => changeAddress("locality", event.target.value)} required minLength={2} maxLength={80} /></label>
+                    <div className="delivery-address-row"><label>State<input autoComplete="address-level1" value={address.administrative_district_level_1} onChange={event => changeAddress("administrative_district_level_1", event.target.value.toUpperCase())} required pattern="[A-Z]{2}" maxLength={2} /></label><label>ZIP code<input autoComplete="postal-code" value={address.postal_code} onChange={event => changeAddress("postal_code", event.target.value)} required pattern="[0-9]{5}(-[0-9]{4})?" maxLength={10} inputMode="numeric" /></label></div>
+                    <p className="order-tax-note">Your address is sent to Google to calculate driving distance, and to Square when you check out.</p>
+                    <button className="delivery-quote-button" type="button" onClick={() => void calculateDelivery()} disabled={quoting || !menu.paidDeliveryAvailable || !menu.acceptingOrders}>{quoting ? "Calculating…" : "Calculate delivery fee"}</button>
+                    {deliveryQuote && <div className="delivery-quote-result" role="status"><strong>{deliveryQuote.miles.toFixed(2)} driving miles · {formatPrice(deliveryQuote.fee, "USD")} delivery</strong><small>Powered by Google, ©{new Date().getFullYear()} Google. Final taxes and discounts are shown on Square.</small></div>}
+                    {quoteError && <p className="order-error" role="alert">{quoteError}</p>}
                   </>}
                   <label>Name<input name="name" autoComplete="name" required minLength={2} maxLength={100} placeholder="Your name" /></label>
                   <label>Phone<input name="phone" type="tel" autoComplete="tel" required minLength={10} maxLength={24} placeholder="(480) 555-0123" /></label>

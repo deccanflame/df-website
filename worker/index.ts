@@ -5,6 +5,7 @@ import { handleOrderingRequest } from "../functions/square.mjs";
 import { readPublicDeliverySettings } from "../functions/community-delivery.mjs";
 
 interface Env {
+  GOOGLE_MAPS_API_KEY?: string;
   ORDERING_FIREBASE_PROJECT_ID?: string;
   SQUARE_ACCESS_TOKEN?: string;
   SQUARE_LOCATION_ID?: string;
@@ -42,7 +43,7 @@ const worker = {
     if (url.pathname.startsWith("/api/square/")) {
       // This worker is only for local Sandbox development. Production ordering
       // must use Firebase Functions, which enforces App Check and shared limits.
-      if (env.SQUARE_ENVIRONMENT === "production" && url.pathname.replace(/\/$/, "") === "/api/square/checkout") {
+      if (env.SQUARE_ENVIRONMENT === "production" && ["/api/square/checkout", "/api/square/delivery-quote"].includes(url.pathname.replace(/\/$/, ""))) {
         return Response.json({ error: "Production checkout must use the protected Firebase backend." }, { status: 503, headers: { "Cache-Control": "no-store" } });
       }
       return handleOrderingRequest(request, { ...env, readDeliverySettings: env.ORDERING_FIREBASE_PROJECT_ID ? () => readPublicDeliverySettings(env.ORDERING_FIREBASE_PROJECT_ID) : undefined });

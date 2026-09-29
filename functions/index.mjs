@@ -12,9 +12,9 @@ import { validSquareSignature, processSquareEvent } from "./square-webhook.mjs";
 
 initializeApp();
 const token = defineSecret("SQUARE_ACCESS_TOKEN");
+const mapsKey = defineSecret("GOOGLE_MAPS_API_KEY");
 const webhookKey = defineSecret("SQUARE_WEBHOOK_SIGNATURE_KEY");
 const webhookUrl = defineString("SQUARE_WEBHOOK_NOTIFICATION_URL", { default: "" });
-const communityEnabled = defineString("COMMUNITY_PROGRESS_ENABLED", { default: "false" });
 const location = defineString("SQUARE_LOCATION_ID");
 const environment = defineString("SQUARE_ENVIRONMENT", { default: "sandbox" });
 const enabled = defineString("SQUARE_ORDERING_ENABLED", { default: "false" });
@@ -24,7 +24,7 @@ const categories = defineString("SQUARE_MENU_CATEGORY_IDS", { default: "" });
 const origins = defineString("ORDERING_ALLOWED_ORIGINS", { default: "https://deccanflame.com,https://www.deccanflame.com" });
 
 export const squareOrdering = onRequest({
-  region: "us-central1", secrets: [token], timeoutSeconds: 60,
+  region: "us-central1", secrets: [token, mapsKey], timeoutSeconds: 60,
   memory: "256MiB", minInstances: 0, maxInstances: 5, concurrency: 20, invoker: "public",
 }, async (req, res) => {
   res.set("Cache-Control", "no-store");
@@ -54,14 +54,11 @@ export const squareOrdering = onRequest({
     });
     const response = await handleOrderingRequest(request, {
       SQUARE_ACCESS_TOKEN: token.value(), SQUARE_LOCATION_ID: location.value(),
+      GOOGLE_MAPS_API_KEY: mapsKey.value(),
       SQUARE_ENVIRONMENT: environment.value(), SQUARE_ORDERING_ENABLED: enabled.value(),
       SQUARE_PICKUP_MINUTES: prep.value(), SQUARE_MENU_CATEGORY_IDS: categories.value(),
       ORDERING_ALLOWED_ORIGINS: origins.value(),
       readDeliverySettings: async () => (await getFirestore().doc(DELIVERY_SETTINGS_PATH).get()).data(),
-      ...(communityEnabled.value() === "true" && webhookUrl.value().startsWith("https://") ? {
-        readCommunityCampaigns: communityStore(getFirestore(), environment.value(), location.value()).readCampaigns,
-        recordCommunityCheckout: communityStore(getFirestore(), environment.value(), location.value()).recordCheckout,
-      } : {}),
     });
     res.status(response.status).type("json").send(await response.text());
   } catch {
