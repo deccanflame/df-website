@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, within, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SquareMenu } from "../components/SquareMenu";
 import { loadMenu } from "../functions/square.mjs";
@@ -15,6 +15,45 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const renderMenu = () => render(<SquareMenu><p>Restaurant printed menu</p></SquareMenu>);
+
+test("order preferences precede the dishes and community selection is never duplicated", async () => {
+  menu.deliverySettings = { communities: ["Northgate", "Westgate"], startTime: "14:00", endTime: "18:30" };
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json(menu)));
+  const user = userEvent.setup(); renderMenu();
+  const type = await screen.findByRole("combobox", { name: "Order type" });
+  const preferences = screen.getByRole("region", { name: "Choose how to receive your order" });
+  expect(preferences.contains(type)).toBe(true);
+  expect(preferences.compareDocumentPosition(screen.getByRole("region", { name: "Menu and order" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Community" })).toBeNull();
+  await user.selectOptions(type, "community_delivery");
+  expect(screen.getAllByRole("combobox", { name: "Community" })).toHaveLength(1);
+  await user.selectOptions(screen.getByRole("combobox", { name: "Community" }), "Westgate");
+  await fillOrder(user);
+  expect(screen.getAllByRole("combobox", { name: "Order type" })).toHaveLength(1);
+  expect(screen.getAllByRole("combobox", { name: "Community" })).toHaveLength(1);
+  expect(screen.getByText("Community Delivery · Westgate")).toBeTruthy();
+  await user.selectOptions(type, "pickup");
+  expect(screen.getByLabelText("Name").value).toBe("Test Customer");
+  expect(within(screen.getByRole("complementary", { name: "Your order" })).getByRole("button", { name: /Remove/ })).toBeTruthy();
+});
+
+test("Sandbox is clearly labelled without presenting its test address as the restaurant", async () => {
+  menu.sandbox = true;
+  menu.location.address = "1600 Pennsylvania Ave NW, Washington, DC, 20500";
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json(menu)));
+  renderMenu();
+  expect(await screen.findByText(/Square Sandbox · test catalog and location/)).toBeTruthy();
+  expect(screen.queryByText(menu.location.address)).toBeNull();
+});
+
+test("production continues to display the actual Square restaurant address", async () => {
+  menu.sandbox = false;
+  menu.location.address = "3502 W Greenway Rd, Phoenix, AZ 85053";
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json(menu)));
+  renderMenu();
+  expect(await screen.findByText(menu.location.address)).toBeTruthy();
+  expect(screen.queryByText(/Square Sandbox · test catalog and location/)).toBeNull();
+});
 
 test("shows the browse-only menu and retry when ordering is unavailable", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Online ordering is not available yet." }, { status: 503 })));
@@ -86,95 +125,101 @@ async function fillOrder(user) {
   await user.type(screen.getByLabelText("Email"), "test@example.com");
 }
 
-test("delivery shows Northgate during the Phoenix window and sends it separately from the name", async () => {
-  menu.serverTime = "2026-09-27T02:30:00Z";
+test("community delivery is free with no terms gate and sends the selected community", async () => {
+  menu.serverTime = "2026-09-26T22:00:00Z"; menu.communityOrderingEnabled = true; menu.communityAcceptingOrders = true;
   const fetchMock = vi.fn().mockImplementation(async url => url.endsWith("/menu/") ? Response.json(menu) : Response.json({ error: "Test checkout stopped." }, { status: 502 }));
   vi.stubGlobal("fetch", fetchMock);
   const user = userEvent.setup(); renderMenu(); await fillOrder(user);
   const type = screen.getByRole("combobox", { name: "Order type" });
-  expect(screen.queryByRole("combobox", { name: "Community" })).toBeNull();
-  await user.selectOptions(type, "delivery");
-  const community = screen.getByRole("combobox", { name: "Community" });
-  expect(community.value).toBe("Northgate");
-  expect(within(community).getAllByRole("option").map(option => option.textContent)).toEqual(["Northgate"]);
-  expect(Boolean(type.compareDocumentPosition(community) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-  expect(Boolean(community.compareDocumentPosition(screen.getByLabelText("Name")) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-  await user.click(screen.getByRole("checkbox", { name: /I agree to this policy/ }));
+  expect(within(type).getAllByRole("option").map(o=>o.textContent)).toEqual(["Community Delivery", "Delivery", "Pickup"]);
+  await user.selectOptions(type, "community_delivery");
+  expect(screen.getByRole("combobox", { name: "Community" }).value).toBe("Northgate");
+  expect(screen.queryByRole("checkbox", { name: /I agree/ })).toBeNull();
+  expect(screen.queryByRole("progressbar")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Place Order", exact: true }));
   await screen.findByRole("alert");
   const payload = JSON.parse(fetchMock.mock.calls.find(([url]) => url.endsWith("/checkout/"))[1].body);
-  expect(payload.orderType).toBe("delivery");
-  expect(payload.community).toBe("Northgate");
-  expect(payload.communityTermsAccepted).toBe("community-minimum-v1");
-  expect(payload.customer.name).toBe("Test Customer");
+  expect(payload.orderType).toBe("community_delivery"); expect(payload.community).toBe("Northgate");
+  expect(payload.communityTermsAccepted).toBeUndefined(); expect(payload.deliveryFee).toBeUndefined();
   await user.selectOptions(type, "pickup");
   expect(screen.queryByRole("combobox", { name: "Community" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Place Order", exact: true }));
-  await screen.findByRole("alert");
-  expect(JSON.parse(fetchMock.mock.calls.at(-1)[1].body).community).toBeUndefined();
 });
 
-test("delivery outside the window sends the original name without a community", async () => {
-  menu.serverTime = "2026-09-27T03:00:00Z";
-  const fetchMock = vi.fn().mockImplementation(async url => url.endsWith("/menu/") ? Response.json(menu) : Response.json({ error: "Test checkout stopped." }, { status: 502 }));
-  vi.stubGlobal("fetch", fetchMock);
-  const user = userEvent.setup(); renderMenu(); await fillOrder(user);
-  await user.selectOptions(screen.getByRole("combobox", { name: "Order type" }), "delivery");
-  expect(screen.queryByRole("combobox", { name: "Community" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Place Order", exact: true }));
-  await screen.findByRole("alert");
-  const payload = JSON.parse(fetchMock.mock.calls.at(-1)[1].body);
-  expect(payload.orderType).toBe("delivery");
-  expect(payload.community).toBeUndefined();
-  expect(payload.customer.name).toBe("Test Customer");
-});
-
-test("checkout renders saved communities and custom delivery times from the server", async () => {
-  menu.serverTime = "2026-09-27T01:30:00Z";
-  menu.deliverySettings = { communities: ["Westgate", "Northgate"], startTime: "18:15", endTime: "21:00" };
+test("community ordering cutoff disables checkout without losing cart or contact details", async () => {
+  menu.serverTime = "2026-09-27T01:29:59Z"; menu.communityOrderingEnabled = true;
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json(menu)));
+  let elapsed = 0; vi.spyOn(performance, "now").mockImplementation(() => elapsed);
   const user = userEvent.setup(); renderMenu(); await fillOrder(user);
-  await user.selectOptions(screen.getByRole("combobox", { name: "Order type" }), "delivery");
-  const community = screen.getByRole("combobox", { name: "Community" });
-  expect(within(community).getAllByRole("option").map(option => option.textContent)).toEqual(["Westgate", "Northgate"]);
-  expect(community.value).toBe("Westgate");
-  expect(screen.getByText(/6:15 p.m.–9:00 p.m. Phoenix time/)).toBeTruthy();
-});
-
-test("the community selector opens and closes across time boundaries without a page reload", async () => {
-  menu.serverTime = "2026-09-27T01:59:59Z";
-  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json(menu)));
-  let elapsed = 0;
-  vi.spyOn(performance, "now").mockImplementation(() => elapsed);
-  const user = userEvent.setup(); renderMenu(); await fillOrder(user);
-  await user.selectOptions(screen.getByRole("combobox", { name: "Order type" }), "delivery");
-  expect(screen.queryByRole("combobox", { name: "Community" })).toBeNull();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Order type" }), "community_delivery");
+  expect(screen.getByRole("button", { name: "Place Order", exact: true }).disabled).toBe(false);
   elapsed = 1000;
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "Community" })).toBeTruthy(), { timeout: 2000 });
-  elapsed = 3_601_000;
-  await waitFor(() => expect(screen.queryByRole("combobox", { name: "Community" })).toBeNull(), { timeout: 2000 });
+  await waitFor(()=>expect(screen.getByRole("button", { name: "Place Order", exact: true }).disabled).toBe(true),{timeout:2000});
+  expect(screen.getByLabelText("Name").value).toBe("Test Customer");
 });
 
-test("a checkout crossing into the community window refreshes the selector without losing contact details", async () => {
-  menu.serverTime = "2026-09-27T01:59:59Z";
-  vi.spyOn(performance, "now").mockReturnValue(0);
-  const fetchMock = vi.fn().mockImplementation(async url => {
-    if (url.endsWith("/menu/")) return Response.json(menu);
-    menu.serverTime = "2026-09-27T02:00:00Z";
-    return Response.json({ error: "Please select your community for delivery between 7 and 8 p.m. Phoenix time." }, { status: 409 });
-  });
-  vi.stubGlobal("fetch", fetchMock);
+test("community delivery opens at 2 p.m. without reloading and shows saved communities", async () => {
+  menu.serverTime = "2026-09-26T20:59:59Z"; menu.communityOrderingEnabled = true;
+  menu.deliverySettings = { communities: ["Westgate","Northgate"], startTime: "19:00", endTime: "20:00" };
+  vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>Response.json(menu)));
+  let elapsed = 0; vi.spyOn(performance,"now").mockImplementation(()=>elapsed);
+  const user=userEvent.setup(); renderMenu(); await fillOrder(user);
+  await user.selectOptions(screen.getByRole("combobox",{name:"Order type"}),"community_delivery");
+  expect(screen.getByRole("combobox",{name:"Community"}).value).toBe("Westgate");
+  expect(screen.getByRole("button",{name:"Place Order",exact:true}).disabled).toBe(true);
+  elapsed=1000;
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Place Order",exact:true}).disabled).toBe(false),{timeout:2000});
+});
+
+test("paid delivery requires an address quote, clears it on address edits, and sends fee separately", async () => {
+  menu.paidDeliveryAvailable = true;
+  const fetchMock=vi.fn().mockImplementation(async url=>url.endsWith("/menu/")?Response.json(menu):url.endsWith("/delivery-quote/")?Response.json({fee:500,miles:5,currency:"USD"}):Response.json({error:"Test checkout stopped."},{status:502}));
+  vi.stubGlobal("fetch",fetchMock);
+  const user=userEvent.setup(); renderMenu(); await fillOrder(user);
+  await user.selectOptions(screen.getByRole("combobox",{name:"Order type"}),"delivery");
+  expect(screen.queryByRole("combobox",{name:"Community"})).toBeNull();
+  expect(screen.getByRole("button",{name:"Place Order",exact:true}).disabled).toBe(true);
+  await user.type(screen.getByLabelText("Street address"),"123 Test Street");
+  await user.type(screen.getByLabelText("City"),"Phoenix");
+  await user.type(screen.getByLabelText("ZIP code"),"85053");
+  await user.click(screen.getByRole("button",{name:"Calculate delivery fee"}));
+  await screen.findByText(/5.00 driving miles/);
+  await user.type(screen.getByLabelText(/Apartment or unit/),"2");
+  expect(screen.getByRole("button",{name:"Place Order",exact:true}).disabled).toBe(true);
+  await user.click(screen.getByRole("button",{name:"Calculate delivery fee"}));
+  await screen.findByText(/5.00 driving miles/);
+  await user.click(screen.getByRole("button",{name:"Place Order",exact:true}));
+  await screen.findByRole("alert");
+  const payload=JSON.parse(fetchMock.mock.calls.find(([url])=>url.endsWith("/checkout/"))[1].body);
+  expect(payload.deliveryFee).toBe(500); expect(payload.deliveryAddress.address_line_2).toBe("2"); expect(payload.community).toBeUndefined();
+  const quoteCall=fetchMock.mock.calls.find(([url])=>url.endsWith("/delivery-quote/"));
+  expect(quoteCall[1].headers["X-Firebase-AppCheck"]).toBe("test-app-check");
+});
+
+test("paid delivery fails safely while routing is not configured", async () => {
+  menu.paidDeliveryAvailable=false;
+  vi.stubGlobal("fetch",vi.fn().mockImplementation(async()=>Response.json(menu)));
+  const user=userEvent.setup();renderMenu();await fillOrder(user);
+  await user.selectOptions(screen.getByRole("combobox",{name:"Order type"}),"delivery");
+  expect(screen.getByRole("button",{name:"Calculate delivery fee"}).disabled).toBe(true);
+  expect(screen.getByRole("button",{name:"Place Order",exact:true}).disabled).toBe(true);
+  expect(screen.getByText(/Address-based delivery is not connected/)).toBeTruthy();
+});
+
+test("an in-flight quote for an old address cannot enable checkout after the address changes", async () => {
+  menu.paidDeliveryAvailable = true;
+  let finishQuote;
+  const pending = new Promise(resolve => { finishQuote = resolve; });
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async url => url.endsWith("/menu/") ? Response.json(menu) : pending));
   const user = userEvent.setup(); renderMenu(); await fillOrder(user);
   await user.selectOptions(screen.getByRole("combobox", { name: "Order type" }), "delivery");
-  await user.click(screen.getByRole("button", { name: "Place Order", exact: true }));
-  expect((await screen.findByRole("combobox", { name: "Community" })).value).toBe("Northgate");
-  expect(screen.getByLabelText("Name").value).toBe("Test Customer");
-  expect(screen.getByRole("combobox", { name: "Order type" }).value).toBe("delivery");
-  await user.click(screen.getByRole("checkbox", { name: /I agree to this policy/ }));
-  await user.click(screen.getByRole("button", { name: "Place Order", exact: true }));
-  await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/checkout/"))).toHaveLength(2));
-  const payload = JSON.parse(fetchMock.mock.calls.filter(([url]) => url.endsWith("/checkout/")).at(-1)[1].body);
-  expect(payload.community).toBe("Northgate");
+  await user.type(screen.getByLabelText("Street address"), "123 Test Street");
+  await user.type(screen.getByLabelText("City"), "Phoenix");
+  await user.type(screen.getByLabelText("ZIP code"), "85053");
+  await user.click(screen.getByRole("button", { name: "Calculate delivery fee" }));
+  await user.type(screen.getByLabelText("Street address"), " East");
+  await act(async () => { finishQuote(Response.json({ fee: 500, miles: 5, currency: "USD" })); });
+  expect(screen.queryByText(/5.00 driving miles/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Place Order", exact: true }).disabled).toBe(true);
 });
 
 test("App Check failure stops checkout before an order request is sent", async () => {

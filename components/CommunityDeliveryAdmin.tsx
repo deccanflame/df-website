@@ -4,10 +4,13 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { doc, getDoc, runTransaction, serverTimestamp } from "firebase/firestore";
 import { firestore } from "../lib/firebase";
 import { DEFAULT_DELIVERY_SETTINGS, DELIVERY_SETTINGS_PATH, validateDeliverySettings } from "../functions/community-delivery.mjs";
+import { COMMUNITY_ORDER_START, COMMUNITY_ORDER_END } from "../functions/delivery.mjs";
+
+const currentSettings = (value: unknown) => ({ ...validateDeliverySettings(value), startTime: COMMUNITY_ORDER_START, endTime: COMMUNITY_ORDER_END });
 
 // Mounted only inside the dashboard's admin gate; rules enforce write access.
 export function CommunityDeliveryAdmin() {
-  const [settings, setSettings] = useState(() => validateDeliverySettings(DEFAULT_DELIVERY_SETTINGS));
+  const [settings, setSettings] = useState(() => currentSettings(DEFAULT_DELIVERY_SETTINGS));
   const [version, setVersion] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(true);
@@ -21,7 +24,7 @@ export function CommunityDeliveryAdmin() {
     if (!firestore) return;
     return getDoc(doc(firestore, DELIVERY_SETTINGS_PATH)).then(snapshot => {
       const saved = snapshot.data();
-      setSettings(validateDeliverySettings(saved === undefined ? DEFAULT_DELIVERY_SETTINGS : saved));
+      setSettings(currentSettings(saved === undefined ? DEFAULT_DELIVERY_SETTINGS : saved));
       setVersion(saved?.version || 0); setLoaded(true); setDirty(false); setName(""); setEditing(null);
     }).catch(() => setError("Could not load delivery settings. Check your connection and deployed Firestore rules, then reload."))
       .finally(() => setBusy(false));
@@ -62,12 +65,12 @@ export function CommunityDeliveryAdmin() {
 
   return <section className="dashboard-panel community-admin" aria-labelledby="community-admin-title">
     <div className="panel-heading"><div><span>04</span><h2 id="community-admin-title">Community delivery</h2></div></div>
-    <p>Add or edit communities, then save your changes. Times are daily in Phoenix; an end time earlier than the start runs overnight.</p>
-    <p>Delivery unlocks at 5 paid orders or $50 in food subtotal per community. Change names and times only between campaigns: a different name or window starts a separate goal. If a goal is missed, arrange pickup or issue refunds manually in Square.</p>
+    <p>Add or edit the communities eligible for free delivery, then save your changes.</p>
+    <p>Community orders are accepted daily from 2–6:30 p.m., for free delivery that evening from 7–8 p.m. Phoenix time. There is no minimum order count or spend. Paid address-based Delivery and Pickup remain separate options.</p>
     <fieldset disabled={busy || !loaded} aria-label="Community delivery settings">
       <div className="community-times">
-        <label>Window starts<input type="time" value={settings.startTime} onChange={event => { setSettings({ ...settings, startTime: event.target.value }); setDirty(true); setMessage(""); }} required /></label>
-        <label>Window ends<input type="time" value={settings.endTime} onChange={event => { setSettings({ ...settings, endTime: event.target.value }); setDirty(true); setMessage(""); }} required /></label>
+        <label>Orders open<input type="time" value={COMMUNITY_ORDER_START} readOnly /></label>
+        <label>Orders close<input type="time" value={COMMUNITY_ORDER_END} readOnly /></label>
       </div>
       <ul className="community-list">{settings.communities.map((community: string, index: number) => <li key={community}>
         <span>{community}</span><div>
@@ -75,7 +78,7 @@ export function CommunityDeliveryAdmin() {
           <button type="button" className="danger" aria-label={`Delete ${community}`} onClick={() => removeCommunity(index)}>Delete</button>
         </div>
       </li>)}</ul>
-      {!settings.communities.length && <p>No communities. Saving an empty list turns off community selection and name suffixes, but keeps delivery tagging available.</p>}
+      {!settings.communities.length && <p>No communities. Saving an empty list disables Community Delivery; paid Delivery and Pickup are unaffected.</p>}
       <form onSubmit={updateCommunity}>
         <label>{editing === null ? "New community" : "Community name"}<input value={name} onChange={event => setName(event.target.value)} maxLength={60} required /></label>
         <div className="dashboard-actions"><button type="submit">{editing === null ? "Add community" : "Update community"}</button>{editing !== null && <button type="button" className="quiet" onClick={() => { setEditing(null); setName(""); }}>Cancel edit</button>}</div>

@@ -3,7 +3,7 @@ import test from "node:test";
 import { createCheckout, handleOrderingRequest, isLocationOpen, loadMenu } from "../functions/square.mjs";
 import { isCommunityDeliveryWindow, validateDeliverySettings, readPublicDeliverySettings } from "../functions/community-delivery.mjs";
 import { catalogFixture, environment, communityEnvironment, locationFixture, openTime, orderFixture, squareMock } from "./square-fixtures.mjs";
-import { COMMUNITY_TERMS_VERSION } from "../functions/community-progress.mjs";
+
 
 test("loads every catalog page, category, image and required option", async () => {
   const mock = squareMock({ paginated: true });
@@ -73,88 +73,76 @@ test("pickup checkout supplies contact details only through the fulfillment", as
 });
 
 for (const [time, active] of [
-  ["2026-09-27T01:59:59.999Z", false], // 6:59:59 p.m. Phoenix
-  ["2026-09-27T02:00:00.000Z", true],
-  ["2026-09-27T02:59:59.999Z", true],
-  ["2026-09-27T03:00:00.000Z", false],
-  ["2026-01-27T02:30:00.000Z", true], // Phoenix does not change clocks in winter.
-]) {
-  test(`delivery community window at ${time}: ${active}`, async () => {
-    const now = new Date(time);
-    assert.equal(isCommunityDeliveryWindow(now), active);
-    const mock = squareMock();
-    const body = { ...orderFixture(), orderType: "delivery", community: "Northgate", ...(active ? { communityTermsAccepted: COMMUNITY_TERMS_VERSION } : {}) };
-    await createCheckout(active ? communityEnvironment : environment, body, mock.fetcher, now);
-    const fulfillment = mock.calls.at(-1).body.order.fulfillments[0];
-    assert.equal(fulfillment.type, "PICKUP", "Restaurant-managed delivery retains hosted pickup checkout");
-    assert.equal(fulfillment.pickup_details.recipient.display_name, `Test Customer${active ? " - Northgate" : ""}`);
-    assert.match(fulfillment.pickup_details.note, /^Website delivery order/);
-    assert.match(fulfillment.pickup_details.note, /No cutlery/);
-    assert.equal(fulfillment.pickup_details.note.includes("Northgate"), active);
-  });
-}
+  ["2026-09-26T20:59:59.999Z", false],
+  ["2026-09-26T21:00:00.000Z", true],
+  ["2026-09-27T01:29:59.999Z", true],
+  ["2026-09-27T01:30:00.000Z", false],
+  ["2026-01-26T21:00:00.000Z", true],
+]) test(`community orders at ${time}: ${active}`, async () => {
+  const mock = squareMock(), now = new Date(time);
+  const body = { ...orderFixture(), orderType: "community_delivery", community: "Northgate" };
+  if (!active) {
+    await assert.rejects(createCheckout(environment, body, mock.fetcher, now), e => e.status === 409 && /2–6:30/.test(e.message));
+    assert.equal(mock.calls.some(c => c.url.includes("payment-links")), false);
+    return;
+  }
+  await createCheckout(environment, body, mock.fetcher, now);
+  const request = mock.calls.at(-1).body, fulfillment = request.order.fulfillments[0];
+  assert.equal(fulfillment.type, "PICKUP");
+  assert.equal(fulfillment.pickup_details.recipient.display_name, "Test Customer - Northgate");
+  assert.equal(fulfillment.pickup_details.schedule_type, "SCHEDULED");
+  assert.equal(fulfillment.pickup_details.pickup_window_duration, "PT1H");
+  assert.equal(fulfillment.pickup_details.pickup_at, new Date(Date.parse(now.toISOString().slice(0,10)+"T00:00:00Z") + (time.includes("01:") ? 2 : 26)*3600000).toISOString());
+  assert.equal(request.order.service_charges, undefined);
+  assert.match(request.payment_note, /No order minimum/);
+  assert.match(fulfillment.pickup_details.note, /No cutlery/);
+});
 
-test("pickup and legacy requests never append a community, even inside the window", async () => {
-  for (const orderType of [undefined, "pickup"]) {
+test("community delivery has no campaign, payment minimum or terms gate; honors the pause switch", async () => {
+  let recorded = false;
+  const env = { ...communityEnvironment, recordCommunityCheckout: async () => { recorded = true; } };
+  const body = { ...orderFixture(), orderType: "community_delivery", community: "Northgate" };
+  await createCheckout(env, body, squareMock().fetcher, new Date("2026-09-26T21:00:00Z"));
+  assert.equal(recorded, false);
+  await assert.rejects(createCheckout({ ...env, SQUARE_ORDERING_ENABLED: "false" }, body, squareMock().fetcher, new Date("2026-09-26T21:00:00Z")), e => e.status === 409);
+});
+
+test("community delivery accepts during its own window even if pickup is closed", async () => {
+  const location = locationFixture(); location.business_hours.periods = [];
+  const now = new Date("2026-09-26T21:00:00Z"), mock = squareMock({ location });
+  const menu = await loadMenu(environment, mock.fetcher, now);
+  assert.equal(menu.acceptingOrders, false); assert.equal(menu.communityAcceptingOrders, true);
+  await createCheckout(environment, { ...orderFixture(), orderType: "community_delivery", community: "Northgate" }, mock.fetcher, now);
+  await assert.rejects(createCheckout(environment, orderFixture(), mock.fetcher, now), e => e.status === 409);
+});
+
+test("pickup retains the original name, ASAP preparation and zero delivery fee", async () => {
+  const mock = squareMock();
+  await createCheckout(environment, { ...orderFixture(), orderType: "pickup", community: "Northgate", deliveryFee: 1 }, mock.fetcher, new Date("2026-09-26T21:00:00Z"));
+  const order = mock.calls.at(-1).body.order;
+  assert.equal(order.fulfillments[0].pickup_details.recipient.display_name, "Test Customer");
+  assert.equal(order.fulfillments[0].pickup_details.schedule_type, "ASAP");
+  assert.equal(order.service_charges, undefined);
+});
+
+test("community and order type are validated before creating checkout", async () => {
+  for (const fields of [{orderType:"community_delivery"}, {orderType:"community_delivery",community:"Forged"}, {orderType:"community_delivery",community:["Northgate"]}, {orderType:"courier"}, {orderType:null}]) {
     const mock = squareMock();
-    await createCheckout(environment, { ...orderFixture(), orderType, community: "Northgate" }, mock.fetcher, new Date("2026-09-27T02:30:00Z"));
-    const details = mock.calls.at(-1).body.order.fulfillments[0].pickup_details;
-    assert.equal(details.recipient.display_name, "Test Customer");
-    assert.equal(details.note, "No cutlery");
+    await assert.rejects(createCheckout(environment, { ...orderFixture(), ...fields }, mock.fetcher, new Date("2026-09-26T21:00:00Z")));
+    assert.equal(mock.calls.some(c => c.url.includes("payment-links")), false);
   }
 });
 
-test("delivery outside the window needs no community and ignores client-provided time", async () => {
-  const mock = squareMock();
-  await createCheckout(environment, { ...orderFixture(), orderType: "delivery", serverTime: "2026-09-27T02:30:00Z" }, mock.fetcher, openTime);
-  assert.equal(mock.calls.at(-1).body.order.fulfillments[0].pickup_details.recipient.display_name, "Test Customer");
-});
-
-test("community and order type are validated before creating a payment link", async () => {
-  for (const [fields, status, pattern] of [
-    [{ orderType: "delivery" }, 409, /select your community/],
-    [{ orderType: "delivery", community: "Forged community" }, 409, /available delivery community/],
-    [{ orderType: "delivery", community: ["Northgate"] }, 409, /available delivery community/],
-    [{ orderType: "courier" }, 400, /choose pickup or delivery/],
-    [{ orderType: null }, 400, /choose pickup or delivery/],
-  ]) {
-    const mock = squareMock();
-    await assert.rejects(createCheckout(environment, { ...orderFixture(), ...fields, serverTime: openTime.toISOString() }, mock.fetcher, new Date("2026-09-27T02:30:00Z")), error => error.status === status && pattern.test(error.message));
-    assert.equal(mock.calls.some(call => call.url.includes("payment-links")), false);
-  }
-});
-
-test("delivery retries are stable but pickup and delivery have different idempotency keys", async () => {
-  const mock = squareMock();
-  const body = { ...orderFixture(), orderType: "delivery", community: "Northgate", communityTermsAccepted: COMMUNITY_TERMS_VERSION };
-  const now = new Date("2026-09-27T02:30:00Z");
-  await createCheckout(communityEnvironment, body, mock.fetcher, now);
-  const firstKey = mock.calls.at(-1).body.idempotency_key;
-  await createCheckout(communityEnvironment, body, mock.fetcher, now);
-  assert.equal(mock.calls.at(-1).body.idempotency_key, firstKey);
-  await createCheckout(environment, { ...body, orderType: "pickup" }, mock.fetcher, now);
-  assert.notEqual(mock.calls.at(-1).body.idempotency_key, firstKey);
-});
-
-test("menu reports server time to synchronize the community selector", async () => {
-  const menu = await loadMenu(environment, squareMock().fetcher, openTime);
-  assert.equal(menu.serverTime, openTime.toISOString());
-  assert.equal(isCommunityDeliveryWindow(new Date("invalid")), false);
-});
-
-test("saved communities and minute-level time windows govern both menu and checkout", async () => {
-  let settings = { communities: ["Westgate", "Northgate"], startTime: "12:15", endTime: "13:45" };
-  const env = { ...communityEnvironment, readDeliverySettings: async () => settings };
-  const now = new Date("2026-09-16T19:30:00Z");
-  assert.deepEqual((await loadMenu(env, squareMock().fetcher, now)).deliverySettings, settings);
-  const mock = squareMock();
-  const body = { ...orderFixture(), orderType: "delivery", community: "Westgate", communityTermsAccepted: COMMUNITY_TERMS_VERSION, deliverySettings: { communities: ["forged"] } };
+test("saved community CRUD is respected, but legacy campaign hours cannot override the new schedule", async () => {
+  let settings = { communities: ["Westgate", "Northgate"], startTime: "19:00", endTime: "20:00" };
+  const env = { ...environment, readDeliverySettings: async () => settings };
+  const now = new Date("2026-09-26T21:00:00Z"), mock = squareMock();
+  assert.deepEqual((await loadMenu(env, mock.fetcher, now)).deliverySettings, {...settings,startTime:"14:00",endTime:"18:30"});
+  const body = { ...orderFixture(), orderType: "community_delivery", community: "Westgate" };
   await createCheckout(env, body, mock.fetcher, now);
   assert.equal(mock.calls.at(-1).body.order.fulfillments[0].pickup_details.recipient.display_name, "Test Customer - Westgate");
   settings = { ...settings, communities: ["Northgate"] };
-  await assert.rejects(createCheckout(env, body, squareMock().fetcher, now), error => error.status === 409);
-  settings = { ...settings, startTime: "13:00" };
-  await assert.rejects(createCheckout(env, body, mock.fetcher, now), error => error.status === 409 && /outside/.test(error.message));
+  await assert.rejects(createCheckout(env, body, mock.fetcher, now), e => e.status === 409);
 });
 
 test("overnight delivery windows use Phoenix minutes with an exclusive end", () => {

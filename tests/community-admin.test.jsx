@@ -15,29 +15,26 @@ beforeEach(() => { state.saved = undefined; state.writes = []; vi.clearAllMocks(
 async function openPanel() { render(<CommunityDeliveryAdmin />); await waitFor(() => expect(screen.getByRole("group").disabled).toBe(false)); }
 function add(name) { fireEvent.change(screen.getByLabelText("New community"), { target: { value: name } }); fireEvent.submit(screen.getByLabelText("New community").closest("form")); }
 
-test("admins can add, rename, delete, change hours, and persist one atomic settings update", async () => {
+test("admins can add, rename, delete, and persist the fixed ordering hours atomically", async () => {
   await openPanel(); expect(screen.getByText("Northgate")).toBeTruthy();
   add("Westgate");
   fireEvent.click(screen.getByRole("button", { name: "Edit Westgate" }));
   fireEvent.change(screen.getByLabelText("Community name"), { target: { value: "Westgate Village" } });
   fireEvent.submit(screen.getByLabelText("Community name").closest("form"));
   fireEvent.click(screen.getByRole("button", { name: "Delete Northgate" }));
-  fireEvent.change(screen.getByLabelText("Window starts"), { target: { value: "18:30" } });
-  fireEvent.change(screen.getByLabelText("Window ends"), { target: { value: "21:15" } });
+  expect(screen.getByLabelText("Orders open").readOnly).toBe(true);
+  expect(screen.getByLabelText("Orders close").readOnly).toBe(true);
   expect(state.writes).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Save delivery settings" }));
   await screen.findByText(/Delivery settings saved/);
-  expect(state.writes[0]).toEqual({ ref: { path: "orderingSettings/communityDelivery" }, payload: { communities: ["Westgate Village"], startTime: "18:30", endTime: "21:15", version: 1, updatedAt: "SERVER_TIME" } });
+  expect(state.writes[0]).toEqual({ ref: { path: "orderingSettings/communityDelivery" }, payload: { communities: ["Westgate Village"], startTime: "14:00", endTime: "18:30", version: 1, updatedAt: "SERVER_TIME" } });
   expect(screen.queryByText("Unsaved changes")).toBeNull();
 });
 
-test("duplicate names and equal times cannot be saved", async () => {
+test("duplicate community names cannot be saved", async () => {
   await openPanel(); add("northgate");
   expect(screen.getByRole("alert").textContent).toContain("unique community");
-  fireEvent.change(screen.getByLabelText("New community"), { target: { value: "" } });
-  fireEvent.change(screen.getByLabelText("Window ends"), { target: { value: "19:00" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save delivery settings" }));
-  expect((await screen.findByRole("alert")).textContent).toContain("different start and end");
+  expect(state.writes).toHaveLength(0);
   expect(runTransaction).not.toHaveBeenCalled();
 });
 

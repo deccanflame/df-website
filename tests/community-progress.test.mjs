@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHmac } from "node:crypto";
-import { communityWindow, campaignPhase, campaignPercent, communityCampaignId, emptyCampaign, COMMUNITY_TERMS_VERSION } from "../functions/community-progress.mjs";
+import { communityWindow, campaignPhase, campaignPercent, communityCampaignId, emptyCampaign } from "../functions/community-progress.mjs";
 import { paymentContribution } from "../functions/community-store.mjs";
 import { validSquareSignature, processSquareEvent } from "../functions/square-webhook.mjs";
-import { createCheckout, loadCommunityProgress } from "../functions/square.mjs";
-import { communityEnvironment, environment, squareMock, orderFixture } from "./square-fixtures.mjs";
+import { loadCommunityProgress } from "../functions/square.mjs";
+import { communityEnvironment, environment } from "./square-fixtures.mjs";
 
 const settings = { communities: ["Northgate"], startTime: "19:00", endTime: "20:00" };
 export const window = { startAt: "2026-09-27T02:00:00.000Z", endAt: "2026-09-27T03:00:00.000Z" };
@@ -82,20 +82,8 @@ test("order updates reconcile cancellations and stale provider reads request a r
   await assert.rejects(processSquareEvent(event, environment, store, fetcher), /behind event/);
   await assert.rejects(processSquareEvent({ type: "refund.updated", data: { object: { refund: { payment_id: paid.id, status: "COMPLETED", amount_money: money(500) } } } }, environment, store, fetcher), /not reflected/);
 });
-test("checkout requires connected tracking and explicit terms; records order before returning link", async () => {
-  const body = { ...orderFixture(), orderType: "delivery", community: "Northgate" }, now = new Date(completed);
-  await assert.rejects(createCheckout(environment, body, squareMock().fetcher, now), e => e.status === 503);
-  await assert.rejects(createCheckout(communityEnvironment, body, squareMock().fetcher, now), e => e.status === 400);
-  body.communityTermsAccepted = COMMUNITY_TERMS_VERSION;
-  let record;
-  const result = await createCheckout({ ...communityEnvironment, recordCommunityCheckout: async (...args) => { record = args; } }, body, squareMock().fetcher, now);
-  assert.ok(result.url); assert.equal(record[0], "square-test-order"); assert.equal(record[1].community, "Northgate"); assert.equal(record[1].paidOrders, 0);
-  await assert.rejects(createCheckout({ ...communityEnvironment, recordCommunityCheckout: async () => { throw new Error("offline"); } }, body, squareMock().fetcher, now), e => e.status === 503);
-  await assert.rejects(createCheckout(communityEnvironment, body, squareMock().fetcher, new Date(window.endAt)), e => e.status === 409);
-});
-test("public progress exposes aggregates only and is honest when disconnected", async () => {
-  assert.equal((await loadCommunityProgress(environment)).enabled, false);
-  const data = await loadCommunityProgress({ ...communityEnvironment, readCommunityCampaigns: async defaults => defaults.map(c => ({ ...c, paidOrders: 3, foodSubtotal: 3800, secret: "private", customer: "PRIVATE" })) }, new Date(completed));
-  assert.equal(data.campaigns[0].paidOrders, 3);
-  assert.equal(JSON.stringify(data).includes("PRIVATE"), false); assert.equal(JSON.stringify(data).includes("secret"), false);
+test("legacy progress endpoint is retired without exposing old campaign totals", async () => {
+  const data = await loadCommunityProgress(communityEnvironment, new Date(completed));
+  assert.equal(data.enabled, false); assert.deepEqual(data.campaigns, []);
+  assert.match(data.message, /no longer has a minimum/);
 });
